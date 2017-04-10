@@ -4,7 +4,6 @@ import scipy.stats
 import pytest
 import numpy as np
 import elboflow as ef
-import tensorflow as tf
 
 
 def _scipy_var(dist):
