@@ -2,7 +2,7 @@ name: elboflow
 channels:
   - conda-forge
 dependencies:
-  - python>=3.5
+  - python=3.5
   - pytest
   - pytest-cov
   - numpy
@@ -13,3 +13,4 @@ dependencies:
   - pylint
   - pip:
     - tqdm
+    - tensorflow
