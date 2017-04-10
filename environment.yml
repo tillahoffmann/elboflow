@@ -1,4 +1,4 @@
-name: python_skeleton
+name: elboflow
 channels:
   - conda-forge
 dependencies:
