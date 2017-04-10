@@ -36,9 +36,15 @@ def evaluate_statistic(x, statistic):
 class Distribution:
     """
     Base class for distributions.
+
+    Parameters
+    ----------
+    parameters : list[str]
+        parameter names
     """
-    def __init__(self):
+    def __init__(self, parameters):
         self._statistics = {}
+        self._parameters = parameters
 
     def _statistic(self, statistic):
         raise NotImplementedError
@@ -71,6 +77,15 @@ class Distribution:
         """
         raise NotImplementedError
 
+    @property
+    def parameters(self):
+        """dict[str, tf.Tensor] : parameters keyed by name"""
+        return {name: getattr(self, '_%s' % name) for name in self._parameters}
+
+    def __str__(self):
+        return "%s(%s)" % (self.__class__.__name__,
+                           ", ".join(["%s=%s" % kv for kv in self.parameters.items()]))
+
 
 class NormalDistribution(Distribution):
     """
@@ -84,7 +99,7 @@ class NormalDistribution(Distribution):
         precision of the normal distribution
     """
     def __init__(self, mean, precision):
-        super(NormalDistribution, self).__init__()
+        super(NormalDistribution, self).__init__(['mean', 'precision'])
         self._mean = as_tensor(mean)
         self._precision = as_tensor(precision)
 
@@ -119,7 +134,7 @@ class GammaDistribution(Distribution):
         scale parameter
     """
     def __init__(self, shape, scale):
-        super(GammaDistribution, self).__init__()
+        super(GammaDistribution, self).__init__(['shape', 'scale'])
         self._shape = as_tensor(shape)
         self._scale = as_tensor(scale)
 
@@ -154,7 +169,7 @@ class CategoricalDistribution(Distribution):
         tensor of probabilities
     """
     def __init__(self, p):
-        super(CategoricalDistribution, self).__init__()
+        super(CategoricalDistribution, self).__init__(['p'])
         self._p = as_tensor(p)
 
     def _statistic(self, statistic):
@@ -181,7 +196,7 @@ class DirichletDistribution(Distribution):
         concentration parameter
     """
     def __init__(self, alpha):
-        super(DirichletDistribution, self).__init__()
+        super(DirichletDistribution, self).__init__(['alpha'])
         self._alpha = as_tensor(alpha)
 
     def _statistic(self, statistic):
@@ -226,7 +241,7 @@ class MultiNormalDistribution(Distribution):
         precision of the multivariate normal distribution
     """
     def __init__(self, mean, precision):
-        super(MultiNormalDistribution, self).__init__()
+        super(MultiNormalDistribution, self).__init__(['mean', 'precision'])
         self._mean = as_tensor(mean)
         self._precision = as_tensor(precision)
 
@@ -276,7 +291,7 @@ class WishartDistribution(Distribution):
         scale matrix
     """
     def __init__(self, shape, scale):
-        super(WishartDistribution, self).__init__()
+        super(WishartDistribution, self).__init__(['shape', 'scale'])
         self._shape = as_tensor(shape)
         self._scale = as_tensor(scale)
 
