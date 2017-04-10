@@ -82,3 +82,20 @@ def test_log_pdf(session, distribution_pair):
     else:
         raise NotImplementedError("%s does not support 'log*'" % scipy_dist)
     np.testing.assert_allclose(actual, desired, 1e-5)
+
+
+def test_normal_linear_log_likelihood(session, reduce):
+    # Generate some data
+    x = np.random.normal(0, 1, (100, 3))
+    theta = np.random.normal(0, 1, 3)
+    predictor = np.dot(x, theta)
+    tau = np.random.gamma(1)
+    scale = 1 / np.sqrt(tau)
+    y = np.random.normal(0, scale, 100)
+    # Compare the log-likelihoods (this does NOT test the correctness for distributions but only
+    # for fixed values)
+    desired = scipy.stats.norm.logpdf(y, predictor, scale)
+    if reduce:
+        desired = np.sum(desired)
+    actual = session.run(ef.NormalDistribution.linear_log_likelihood(y, x, theta, tau, reduce))
+    np.testing.assert_allclose(actual, desired, 1e-5)
