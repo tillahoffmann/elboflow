@@ -24,7 +24,7 @@ def _scipy_mean(dist):
     [(ef.NormalDistribution(mean, precision), scipy.stats.norm(mean, 1 / np.sqrt(precision)))
      for mean, precision in [(0, 1), (3, 0.1), (-5, 2)]],
     [(ef.GammaDistribution(shape, scale), scipy.stats.gamma(shape, scale=1 / scale))
-     for shape, scale in [(1e-3, 3), (50, 2)]],
+     for shape, scale in [(.1, 3), (50, 2)]],
     [(ef.DirichletDistribution(alpha), scipy.stats.dirichlet(alpha)) for alpha in
      [np.ones(5), np.random.gamma(1, 1, 7)]],
     [(ef.WishartDistribution(shape, scale), scipy.stats.wishart(shape, scale))
