@@ -17,14 +17,20 @@ def evaluate_statistic(x, statistic):
     """
     if isinstance(x, Distribution):
         return x.statistic(statistic)
-    elif callable(statistic):
+
+    x = as_tensor(x)
+    if callable(statistic):
         return statistic(x)
     elif isinstance(statistic, numbers.Number):
         return x ** statistic
     elif statistic == 'entropy':
         return tf.constant(0.0)
+    elif statistic == 'outer':
+        return x[..., None, :] * x[..., :, None]
+    elif statistic == 'log_det':
+        return tf.log(tf.matrix_determinant(x))
     else:
-        return KeyError("'%s' is not a recognized statistic" % statistic)
+        raise KeyError("'%s' is not a recognized statistic" % statistic)
 
 
 class Distribution:
@@ -162,7 +168,7 @@ class CategoricalDistribution(Distribution):
             raise KeyError
 
     def log_pdf(self, x):
-        raise NotImplementedError
+        return tf.reduce_sum(x * tf.log(self._p), axis=-1)
 
 
 class DirichletDistribution(Distribution):
@@ -173,8 +179,6 @@ class DirichletDistribution(Distribution):
     ----------
     alpha : tf.Tensor
         concentration parameter
-
-    TODO: fix shapes with keeping or not keeping the dimensions
     """
     def __init__(self, alpha):
         super(DirichletDistribution, self).__init__()
@@ -206,7 +210,7 @@ class DirichletDistribution(Distribution):
             raise KeyError
 
     def log_pdf(self, x):
-        return (self._alpha - 1.0) * evaluate_statistic(x, tf.log) - \
+        return tf.reduce_sum((self._alpha - 1.0) * evaluate_statistic(x, tf.log), axis=-1) - \
             self.statistic('log_normalization')
 
 
@@ -250,9 +254,8 @@ class MultiNormalDistribution(Distribution):
             raise KeyError
 
     def log_pdf(self, x):
-        x_mean = evaluate_statistic(x, 'mean')
-        arg = evaluate_statistic(x, 'outer') + \
-            self.statistic('outer_mean') - \
+        x_mean = evaluate_statistic(x, 1)
+        arg = evaluate_statistic(x, 'outer') + self.statistic('outer_mean') - \
             x_mean[..., None, :] * self._mean[..., :, None] - \
             x_mean[..., :, None] * self._mean[..., None, :]
 

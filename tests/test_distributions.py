@@ -4,6 +4,7 @@ import scipy.stats
 import pytest
 import numpy as np
 import elboflow as ef
+import tensorflow as tf
 
 
 def _scipy_var(dist):
@@ -61,4 +62,21 @@ def test_statistic(session, distribution_pair, statistic):
     else:
         raise KeyError(statistic)
 
+    np.testing.assert_allclose(actual, desired, 1e-5)
+
+
+def test_log_pdf(session, distribution_pair):
+    ef_dist, scipy_dist = distribution_pair
+    ef_x = scipy_x = scipy_dist.rvs()
+
+    if isinstance(ef_dist, ef.DirichletDistribution):
+        scipy_x = scipy_x[0]
+
+    actual = session.run(ef_dist.log_pdf(ef_x))
+    if hasattr(scipy_dist, 'logpdf'):
+        desired = scipy_dist.logpdf(scipy_x)
+    elif hasattr(scipy_dist, 'logpmf'):
+        desired = scipy_dist.logpmf(scipy_x)
+    else:
+        raise NotImplementedError("%s does not support 'log*'" % scipy_dist)
     np.testing.assert_allclose(actual, desired, 1e-5)
