@@ -7,6 +7,7 @@ import elboflow as ef
 
 
 def _scipy_var(dist):
+    """Unified access to variance of scipy distributions."""
     if hasattr(dist, 'var'):
         return dist.var()
     elif hasattr(dist, 'cov'):
@@ -16,6 +17,7 @@ def _scipy_var(dist):
 
 
 def _scipy_mean(dist):
+    """Unified access to mean of scipy distributions."""
     return dist.mean() if callable(dist.mean) else dist.mean
 
 
@@ -42,7 +44,7 @@ def distribution_pair(request):
 def test_statistic(session, distribution_pair, statistic):
     # Get the statistic from the tensorflow object
     ef_dist, scipy_dist = distribution_pair
-    actual = session.run(ef_dist.statistic(statistic))
+    actual = session.run(ef.evaluate_statistic(ef_dist, statistic))
 
     # Get the statistic from scipy.stats
     if isinstance(statistic, numbers.Number):
@@ -68,6 +70,7 @@ def test_log_pdf(session, distribution_pair):
     ef_dist, scipy_dist = distribution_pair
     ef_x = scipy_x = scipy_dist.rvs()
 
+    # Modify the argument for scipy consistency
     if isinstance(ef_dist, ef.DirichletDistribution):
         scipy_x = scipy_x[0]
 
