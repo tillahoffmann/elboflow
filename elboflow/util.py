@@ -82,6 +82,19 @@ def get_positive_definite_variable(name, shape=None, dtype=None, initializer=Non
     return tf.matmul(x, x, True)
 
 
+def get_normalized_variable(name, shape=None, dtype=None, initializer=None, regularizer=None,
+                            trainable=True, collections=None, caching_device=None,
+                            partitioner=None, validate_shape=True, custom_getter=None,
+                            transform=None):
+    """
+    Get an existing variable or create a new one such that it sums to one along the last dimension.
+    """
+    x = get_variable(name, shape, dtype, initializer, regularizer, trainable, collections,
+                     caching_device, partitioner, validate_shape, custom_getter)
+    transform = transform or tf.nn.softmax
+    return transform(x)
+
+
 def multidigamma(x, p):
     """
     Compute the multivariate digamma function recursively.
