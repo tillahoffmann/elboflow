@@ -1,3 +1,4 @@
+import functools as ft
 import numpy as np
 import tensorflow as tf
 
@@ -18,6 +19,48 @@ def as_tensor(x):
     if isinstance(x, BaseDistribution):
         return x
     return tf.convert_to_tensor(x, FLOATX)
+
+
+def tril(x, k=0, name=None):
+    return tf.matrix_band_part(x, -1, k, name)
+
+
+get_variable = tf.get_variable
+
+
+def get_positive_variable(name, shape=None, dtype=None, initializer=None, regularizer=None,
+                          trainable=True, collections=None, caching_device=None, partitioner=None,
+                          validate_shape=True, custom_getter=None, transform=None):
+    """
+    Get an existing positive variable or create a new one.
+    """
+    x = get_variable(name, shape, dtype, initializer, regularizer, trainable, collections,
+                     caching_device, partitioner, validate_shape, custom_getter)
+    transform = transform or tf.nn.softplus
+    return transform(x)
+
+
+def get_tril_variable(name, shape=None, dtype=None, initializer=None, regularizer=None,
+                      trainable=True, collections=None, caching_device=None, partitioner=None,
+                      validate_shape=True, custom_getter=None):
+    """
+    Get an existing lower triangular matrix variable or create a new one.
+    """
+    x = get_variable(name, shape, dtype, initializer, regularizer, trainable, collections,
+                     caching_device, partitioner, validate_shape, custom_getter)
+    return tril(x)
+
+
+def get_cholesky_variable(name, shape=None, dtype=None, initializer=None, regularizer=None,
+                          trainable=True, collections=None, caching_device=None, partitioner=None,
+                          validate_shape=True, custom_getter=None, transform=None):
+    """
+    Get an existing Cholesky variable or create a new one.
+    """
+    x = get_tril_variable(name, shape, dtype, initializer, regularizer, trainable, collections,
+                          caching_device, partitioner, validate_shape, custom_getter)
+    transform = transform or tf.nn.softplus
+    return tf.matrix_set_diag(x, transform(tf.matrix_diag_part(x)))
 
 
 def multidigamma(x, p):
