@@ -119,3 +119,34 @@ def plot_comparison(session, distribution, reference, scale=3, plot_diag=True, a
         ax.set_aspect(aspect)
 
     return lines
+
+
+def plot_cov(session, distribution, vmin='auto', vmax='auto', cmap='coolwarm', ax=None, **kwargs):
+    """
+    Plot the covariance matrix of a multivariate distribution.
+
+    Parameters
+    ----------
+    session : tf.Session
+        tensorflow session used to evaluate the PDF.
+    distribution : Distribution
+        distribution to evaluate.
+    vmin : float, str, or None
+        minimum value for the color map.
+    vmax : float, str, or None
+        maximum value for the color map.
+    cmap : str
+        color map.
+    ax :
+        axes to plot into
+    kwargs : dict
+        keyword arguments passed on to `ax.imshow`
+    """
+    ax = ax or plt.gca()
+    cov = session.run(distribution.cov)
+    if vmax == 'auto':
+        vmax = np.max(np.abs(cov))
+    if vmin == 'auto':
+        vmin = - np.max(np.abs(cov))
+
+    return ax.imshow(cov, cmap=cmap, vmin=vmin, vmax=vmax, **kwargs)
