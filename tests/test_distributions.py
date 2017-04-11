@@ -66,7 +66,7 @@ def test_statistic(session, distribution_pair, statistic):
     np.testing.assert_allclose(actual, desired, 1e-5)
 
 
-def test_log_pdf(session, distribution_pair):
+def test_log_proba(session, distribution_pair):
     ef_dist, scipy_dist = distribution_pair
     ef_x = scipy_x = scipy_dist.rvs()
 
@@ -74,7 +74,7 @@ def test_log_pdf(session, distribution_pair):
     if isinstance(ef_dist, ef.DirichletDistribution):
         scipy_x = scipy_x[0]
 
-    actual = session.run(ef_dist.log_pdf(ef_x))
+    actual = session.run(ef_dist.log_proba(ef_x))
     if hasattr(scipy_dist, 'logpdf'):
         desired = scipy_dist.logpdf(scipy_x)
     elif hasattr(scipy_dist, 'logpmf'):

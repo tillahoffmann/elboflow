@@ -16,11 +16,18 @@ class BaseDistribution:
 
 
 def as_tensor(x):
+    """Convert `x` to a tensor or distribution."""
     if isinstance(x, BaseDistribution):
         return x
     return tf.convert_to_tensor(x, FLOATX)
 
 
+def assert_constant(x):
+    """Assert that `x` is not a distribution."""
+    assert not isinstance(x, BaseDistribution), "expected a constant but got %s" % x
+
+
+@ft.wraps(np.tril)
 def tril(x, k=0, name=None):
     return tf.matrix_band_part(x, -1, k, name)
 

@@ -29,6 +29,8 @@ def evaluate_statistic(x, statistic):
         return tf.log(tf.matrix_determinant(x))
     elif statistic == 'log':
         return tf.log(x)
+    elif statistic == 'lgamma':
+        return tf.lgamma(x)
     else:
         raise KeyError("'%s' is not a recognized statistic" % statistic)
 
@@ -56,9 +58,6 @@ class Distribution(BaseDistribution):
             raise KeyError("'%s' is not a recognized statistic for `%s`" %
                            (statistic, self.__class__.__name__))
 
-    def _log_pdf(self, x):
-        raise NotImplementedError
-
     def statistic(self, statistic):
         """
         Evaluate a statistic of the distribution.
@@ -76,19 +75,16 @@ class Distribution(BaseDistribution):
             self._statistics[statistic] = _statistic
         return _statistic
 
-    def log_pdf(self, x, reduce=False):
+    def log_proba(self, x):
         """
-        Evaluate the log of the distribution.
+        Evaluate the log of the probability distribution evaluated at `x`.
 
         Parameters
         ----------
         x : tf.Tensor or Distribution
             point at which to evaluate the log pdf
         """
-        _log_pdf = self._log_pdf(x)
-        if reduce:
-            _log_pdf = tf.reduce_sum(_log_pdf)
-        return _log_pdf
+        return self.log_likelihood(x, **self.parameters)
 
     @property
     def parameters(self):
@@ -119,6 +115,18 @@ class Distribution(BaseDistribution):
     def entropy(self):
         return self.statistic('entropy')
 
+    @staticmethod
+    def log_likelihood(x, *parameters):
+        """
+        Evaluate the expected log likelihood for `x` given `parameters`.
+
+        Parameters
+        ----------
+        x : tf.Tensor, or Distribution
+            value or distribution at which to evaluate the expected log likelihood
+        """
+        raise NotImplementedError
+
 
 class NormalDistribution(Distribution):
     """
@@ -148,24 +156,22 @@ class NormalDistribution(Distribution):
         else:
             return super(NormalDistribution, self)._statistic(statistic)
 
-    def _log_pdf(self, x):
-        chi2 = tf.square(self._mean) - 2.0 * self._mean * evaluate_statistic(x, 1) + \
-            evaluate_statistic(x, 2)
-        return 0.5 * (evaluate_statistic(self._precision, 'log') - LOG2PI) - \
-            0.5 * evaluate_statistic(self._precision, 1) * chi2
+    @staticmethod
+    def log_likelihood(x, mean, precision):  # pylint: disable=W0221
+        chi2 = evaluate_statistic(x, 2) - 2 * evaluate_statistic(x, 1) * \
+            evaluate_statistic(mean, 1) + evaluate_statistic(mean, 2)
+        return 0.5 * (evaluate_statistic(precision, 'log') - LOG2PI -
+                      evaluate_statistic(precision, 1) * chi2)
 
     @staticmethod
-    def linear_log_likelihood(y, x, theta, tau, reduce=False):
+    def linear_log_likelihood(y, x, theta, tau):
         """
         Evaluate the log likelihood of the observation `y` given features `x`, coefficients `theta`,
         and noise precision `tau`.
 
-        TODO: extend parameter documentation
-
         Parameters
         ----------
-        reduce : bool
-            whether to aggregate the likelihood
+        TODO: extend parameter documentation
         """
         y, x, theta, tau = map(as_tensor, [y, x, theta, tau])
         # Evaluate the pointwise expected log-likelihood
@@ -178,9 +184,6 @@ class NormalDistribution(Distribution):
         ll = 0.5 * (
             evaluate_statistic(tau, 'log') - LOG2PI - evaluate_statistic(tau, 1) * chi2
         )
-        # Reduce the likelihood if desired
-        if reduce:
-            ll = tf.reduce_sum(ll)
         return ll
 
 
@@ -217,10 +220,12 @@ class GammaDistribution(Distribution):
         else:
             return super(GammaDistribution, self)._statistic(statistic)
 
-    def _log_pdf(self, x):
-        return - tf.lgamma(self._shape) + self._shape * tf.log(self._scale) + \
-            (self._shape - 1.0) * evaluate_statistic(x, 'log') - \
-            self._scale * evaluate_statistic(x, 1)
+    @staticmethod
+    def log_likelihood(x, shape, scale):  # pylint: disable=W0221
+        shape_1 = evaluate_statistic(shape, 1)
+        return - evaluate_statistic(shape, 'lgamma') + shape_1 * evaluate_statistic(scale, 'log') + \
+            (shape_1 - 1.0) * evaluate_statistic(x, 'log') - evaluate_statistic(scale, 1) * \
+            evaluate_statistic(x, 1)
 
 
 class CategoricalDistribution(Distribution):
@@ -246,11 +251,12 @@ class CategoricalDistribution(Distribution):
         else:
             return super(CategoricalDistribution, self)._statistic(statistic)
 
-    def _log_pdf(self, x):
-        return tf.reduce_sum(x * tf.log(self._p), axis=-1)
+    @staticmethod
+    def log_likelihood(x, p):  # pylint: disable=W0221
+        return tf.reduce_sum(x * evaluate_statistic(p, 'log'), axis=-1)
 
     @staticmethod
-    def mixture_log_likelihood(z, expected_log_likelihood, reduce=False):
+    def mixture_log_likelihood(z, expected_log_likelihood):
         """
         Evaluate the expected log likelihood given indicator variables `z`.
 
@@ -263,10 +269,7 @@ class CategoricalDistribution(Distribution):
         reduce : bool
             whether to aggregate the likelihood
         """
-        ll = evaluate_statistic(z, 1) * expected_log_likelihood
-        if reduce:
-            ll = tf.reduce_sum(ll)
-        return ll
+        return tf.reduce_sum(evaluate_statistic(z, 1) * expected_log_likelihood, axis=-1)
 
 
 class DirichletDistribution(Distribution):
@@ -307,9 +310,11 @@ class DirichletDistribution(Distribution):
         else:
             return super(DirichletDistribution, self)._statistic(statistic)
 
-    def _log_pdf(self, x):
-        return tf.reduce_sum((self._alpha - 1.0) * evaluate_statistic(x, 'log'), axis=-1) - \
-            self.statistic('log_normalization')
+    @staticmethod
+    def log_likelihood(x, alpha):  # pylint: disable=W0221
+        assert_constant(alpha)
+        return tf.reduce_sum((alpha - 1.0) * evaluate_statistic(x, 'log'), axis=-1) - \
+            tf.reduce_sum(tf.lgamma(alpha), -1) + tf.lgamma(tf.reduce_sum(alpha, -1))
 
 
 class MultiNormalDistribution(Distribution):
@@ -336,30 +341,31 @@ class MultiNormalDistribution(Distribution):
         elif statistic == 'var':
             return tf.matrix_diag_part(self.statistic('cov'))
         elif statistic == 'outer':
-            return self.statistic('outer_mean') + self.statistic('cov')
-        elif statistic == 'outer_mean':
-            return self._mean[..., None, :] * self._mean[..., :, None]
+            return self._mean[..., None, :] * self._mean[..., :, None] + self.statistic('cov')
         elif statistic == 2:
             return tf.square(self._mean) + self.statistic('var')
         elif statistic == 'entropy':
-            return 0.5 * (LOG2PIE * self.statistic('ndim') -
-                          self.statistic('log_det_precision'))
+            return 0.5 * (LOG2PIE * self.statistic('ndim') - self.statistic('_log_det_precision'))
         elif statistic == 'ndim':
             return tf.to_float(self._mean.get_shape()[-1])
-        elif statistic == 'log_det_precision':
+        elif statistic == '_log_det_precision':
             return tf.log(tf.matrix_determinant(self._precision))
         else:
             return super(MultiNormalDistribution, self)._statistic(statistic)
 
-    def _log_pdf(self, x):
-        x_mean = evaluate_statistic(x, 1)
-        arg = evaluate_statistic(x, 'outer') + self.statistic('outer_mean') - \
-            x_mean[..., None, :] * self._mean[..., :, None] - \
-            x_mean[..., :, None] * self._mean[..., None, :]
+    @staticmethod
+    def log_likelihood(x, mean, precision):  # pylint: disable=W0221
+        x_1 = evaluate_statistic(x, 1)
+        mean_1 = evaluate_statistic(mean, 1)
+        arg = evaluate_statistic(x, 'outer') + evaluate_statistic(mean, 'outer') - \
+            x_1[..., None, :] * mean_1[..., :, None] - \
+            x_1[..., :, None] * mean_1[..., None, :]
 
-        return - 0.5 * self.statistic('ndim') * LOG2PI + \
-            0.5 * self.statistic('log_det_precision') - \
-            0.5 * tf.reduce_sum(self._precision * arg, axis=(-1, -2))
+        ndim = tf.to_float(mean_1.get_shape()[-1])
+
+        return - 0.5 * ndim * LOG2PI + \
+            0.5 * evaluate_statistic(precision, 'log_det') - \
+            0.5 * tf.reduce_sum(evaluate_statistic(precision, 1) * arg, axis=(-1, -2))
 
 
 class WishartDistribution(Distribution):
@@ -400,12 +406,16 @@ class WishartDistribution(Distribution):
         else:
             return super(WishartDistribution, self)._statistic(statistic)
 
-    def _log_pdf(self, x):
+    @staticmethod
+    def log_likelihood(x, shape, scale):  # pylint: disable=W0221
+        assert_constant(shape)
         x_logdet = evaluate_statistic(x, 'log_det')
-        x_mean = evaluate_statistic(x, 1)
-        p = self.statistic('ndim')
+        x_1 = evaluate_statistic(x, 1)
+        shape_1 = evaluate_statistic(shape, 1)
+        scale_1 = evaluate_statistic(scale, 1)
+        p = tf.to_float(scale_1.get_shape()[-1])
 
-        return 0.5 * x_logdet * (self._shape - p - 1.0) - \
-            0.5 * tf.reduce_sum(self._scale * x_mean, axis=(-1, -2)) - \
-            0.5 * self._shape * p * LOG2 - lmultigamma(0.5 * self._shape, p) + \
-            0.5 * self._shape * tf.log(tf.matrix_determinant(self._scale))
+        return 0.5 * x_logdet * (shape_1 - p - 1.0) - \
+            0.5 * tf.reduce_sum(scale_1 * x_1, axis=(-1, -2)) - \
+            0.5 * shape_1* p * LOG2 - lmultigamma(0.5 * shape, p) + \
+            0.5 * shape_1 * evaluate_statistic(scale, 'log_det')

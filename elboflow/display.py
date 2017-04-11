@@ -32,7 +32,7 @@ def evaluate_pdf(session, distribution, start=None, stop=None, num=50, scale=3):
 
     # Evaluate the probability density function
     lin = start + np.linspace(0, 1, num)[:, None] * (stop - start)
-    return lin, np.exp(session.run(distribution.log_pdf(lin)))
+    return lin, np.exp(session.run(distribution.log_proba(lin)))
 
 
 def plot_pdf(session, distribution, start=None, stop=None, num=50, scale=3, reference=None, ax=None,
