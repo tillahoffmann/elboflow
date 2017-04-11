@@ -105,3 +105,10 @@ def minmax(x, axis=None):
     Evaluate the minimum and maximum of an array.
     """
     return np.min(x, axis), np.max(x, axis)
+
+
+def add_bias(x):
+    """
+    Add a bias feature to a design matrix.
+    """
+    return np.hstack([np.ones((x.shape[0], 1)), x])
