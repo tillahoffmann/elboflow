@@ -84,7 +84,7 @@ def test_log_proba(session, distribution_pair):
     np.testing.assert_allclose(actual, desired, 1e-5)
 
 
-def test_normal_linear_log_likelihood(session, reduce):
+def test_normal_linear_log_likelihood(session):
     # Generate some data
     x = np.random.normal(0, 1, (100, 3))
     theta = np.random.normal(0, 1, 3)
@@ -95,7 +95,5 @@ def test_normal_linear_log_likelihood(session, reduce):
     # Compare the log-likelihoods (this does NOT test the correctness for distributions but only
     # for fixed values)
     desired = scipy.stats.norm.logpdf(y, predictor, scale)
-    if reduce:
-        desired = np.sum(desired)
-    actual = session.run(ef.NormalDistribution.linear_log_likelihood(y, x, theta, tau, reduce))
+    actual = session.run(ef.NormalDistribution.linear_log_likelihood(y, x, theta, tau))
     np.testing.assert_allclose(actual, desired, 1e-5)
