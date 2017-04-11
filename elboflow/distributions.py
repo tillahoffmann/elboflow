@@ -160,6 +160,8 @@ class NormalDistribution(Distribution):
         Evaluate the log likelihood of the observation `y` given features `x`, coefficients `theta`,
         and noise precision `tau`.
 
+        TODO: extend parameter documentation
+
         Parameters
         ----------
         reduce : bool
@@ -246,6 +248,25 @@ class CategoricalDistribution(Distribution):
 
     def _log_pdf(self, x):
         return tf.reduce_sum(x * tf.log(self._p), axis=-1)
+
+    @staticmethod
+    def mixture_log_likelihood(z, expected_log_likelihood, reduce=False):
+        """
+        Evaluate the expected log likelihood given indicator variables `z`.
+
+        Parameters
+        ----------
+        z : tf.Tensor
+            indiciator variables of shape `(..., k)` where `k` is the number of mixture components
+        expected_log_likelihood : tf.Tensor
+            expected log likelihood given component membership of the same shape as `z`
+        reduce : bool
+            whether to aggregate the likelihood
+        """
+        ll = evaluate_statistic(z, 1) * expected_log_likelihood
+        if reduce:
+            ll = tf.reduce_sum(ll)
+        return ll
 
 
 class DirichletDistribution(Distribution):
