@@ -63,6 +63,18 @@ def get_cholesky_variable(name, shape=None, dtype=None, initializer=None, regula
     return tf.matrix_set_diag(x, transform(tf.matrix_diag_part(x)))
 
 
+def get_positive_definite_variable(name, shape=None, dtype=None, initializer=None, regularizer=None,
+                                   trainable=True, collections=None, caching_device=None,
+                                   partitioner=None, validate_shape=True, custom_getter=None,
+                                   transform=None):
+    """
+    Get an existing positive definite variable or create a new one.
+    """
+    x = get_cholesky_variable(name, shape, dtype, initializer, regularizer, trainable, collections,
+                              caching_device, partitioner, validate_shape, custom_getter, transform)
+    return tf.matmul(x, x, True)
+
+
 def multidigamma(x, p):
     """
     Compute the multivariate digamma function recursively.

@@ -42,3 +42,13 @@ def test_get_cholesky_variable(session, shape):
     np.testing.assert_array_equal(0, np.triu(y, 1), "upper triangular matrix is not zero")
     i = np.arange(shape[-1])
     np.testing.assert_array_less(0, y[..., i, i], "diagonal is not positive")
+
+
+@pytest.mark.parametrize('shape', [(5, 5), (7, 5, 5)])
+def test_get_positive_definite_variable(session, shape):
+    x = ef.get_positive_definite_variable('x%s' % uuid.uuid4().hex, shape)
+    session.run(tf.global_variables_initializer())
+    y = session.run(x)
+    np.testing.assert_allclose(y, np.swapaxes(y, -1, -2), err_msg='matrix not symmetric')
+    i = np.arange(shape[-1])
+    np.testing.assert_array_less(0, y[..., i, i], "diagonal is not positive")
