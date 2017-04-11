@@ -43,3 +43,10 @@ def lmultigamma(x, p):
     x = as_tensor(x)
     return 0.25 * p * (p - 1.0) * LOGPI + \
         tf.reduce_sum(tf.lgamma(x[..., None] - 0.5 * tf.range(p, dtype=x.dtype)), axis=-1)
+
+
+def minmax(x, axis=None):
+    """
+    Evaluate the minimum and maximum of an array.
+    """
+    return np.min(x, axis), np.max(x, axis)

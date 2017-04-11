@@ -76,7 +76,7 @@ class Distribution(BaseDistribution):
             self._statistics[statistic] = _statistic
         return _statistic
 
-    def log_pdf(self, x, reduce=True):
+    def log_pdf(self, x, reduce=False):
         """
         Evaluate the log of the distribution.
 
@@ -106,6 +106,10 @@ class Distribution(BaseDistribution):
     @property
     def var(self):
         return self.statistic('var')
+
+    @property
+    def std(self):
+        return self.statistic('std')
 
     @property
     def cov(self):
@@ -151,7 +155,7 @@ class NormalDistribution(Distribution):
             0.5 * evaluate_statistic(self._precision, 1) * chi2
 
     @staticmethod
-    def linear_log_likelihood(y, x, theta, tau, reduce=True):
+    def linear_log_likelihood(y, x, theta, tau, reduce=False):
         """
         Evaluate the log likelihood of the observation `y` given features `x`, coefficients `theta`,
         and noise precision `tau`.
