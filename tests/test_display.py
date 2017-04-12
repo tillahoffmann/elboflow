@@ -11,8 +11,8 @@ def distribution(request):
         return ef.MultiNormalDistribution(np.random.normal(size=request.param),
                                           np.diag(np.random.gamma(1, size=request.param)))
 
-def test_plot_pdf(session, distribution):
-    ef.plot_pdf(session, distribution)
+def test_plot_proba(session, distribution):
+    ef.plot_proba(session, distribution)
 
 
 def test_plot_cov(session, distribution):
