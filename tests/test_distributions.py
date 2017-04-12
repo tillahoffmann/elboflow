@@ -119,3 +119,21 @@ def test_normal_linear_log_likelihood(session):
     desired = scipy.stats.norm.logpdf(y, predictor, scale)
     actual = session.run(ef.NormalDistribution.linear_log_likelihood(y, x, theta, tau))
     np.testing.assert_allclose(actual, desired, 1e-5)
+
+
+def test_sample_shape(session, distribution_pair):
+    ef_dist, _ = distribution_pair
+    assert session.run(ef_dist.sample_shape).size == ef_dist.sample_rank
+
+
+def test_shape(session, distribution_pair):
+    ef_dist, _ = distribution_pair
+    mean, shape = session.run([ef_dist.mean, ef_dist.shape])
+    np.testing.assert_equal(shape, mean.shape)
+
+
+def test_batch_shape(session, distribution_pair):
+    ef_dist, _ = distribution_pair
+    mean, shape = session.run([ef_dist.mean, ef_dist.batch_shape])
+    desired = mean.shape[:-ef_dist.sample_rank] if ef_dist.sample_rank else mean.shape
+    np.testing.assert_equal(shape, desired)
