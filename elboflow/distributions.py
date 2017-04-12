@@ -44,9 +44,12 @@ class Distribution(BaseDistribution):
     parameters : list[str]
         parameter names
     """
-    def __init__(self, parameters):
+    def __init__(self, parameters, supported_statistics=None):
         self._statistics = {}
         self._parameters = parameters
+        self.supported_statistics = [1, 2, 'var', 'entropy']
+        if supported_statistics:
+            self.supported_statistics.extend(supported_statistics)
 
     def _statistic(self, statistic):
         if statistic == 'outer':
@@ -91,9 +94,15 @@ class Distribution(BaseDistribution):
         """dict[str, tf.Tensor] : parameters keyed by name"""
         return {name: getattr(self, '_%s' % name) for name in self._parameters}
 
-    def __str__(self):
+    def to_str(self, session=None):
+        parameters = self.parameters
+        if session:
+            parameters = {key: session.run(value) for key, value in parameters.items()}
         return "%s(%s)" % (self.__class__.__name__,
-                           ", ".join(["%s=%s" % kv for kv in self.parameters.items()]))
+                           ", ".join(["%s=%s" % kv for kv in parameters.items()]))
+
+    def __str__(self):
+        return self.to_str()
 
     @property
     def mean(self):
@@ -147,7 +156,7 @@ class NormalDistribution(Distribution):
     def _statistic(self, statistic):
         if statistic == 'entropy':
             return 0.5 * (LOG2PIE - tf.log(self._precision))
-        elif statistic in ('mode', 1):
+        elif statistic == 1:
             return self._mean
         elif statistic == 'var':
             return tf.reciprocal(self._precision)
@@ -199,7 +208,7 @@ class GammaDistribution(Distribution):
         scale parameter
     """
     def __init__(self, shape, scale):
-        super(GammaDistribution, self).__init__(['shape', 'scale'])
+        super(GammaDistribution, self).__init__(['shape', 'scale'], ['log'])
         self._shape = as_tensor(shape)
         self._scale = as_tensor(scale)
 
@@ -209,14 +218,12 @@ class GammaDistribution(Distribution):
                 (1.0 - self._shape) * tf.digamma(self._shape)
         elif statistic == 1:
             return self._shape / self._scale
-        elif statistic == 'mode':
-            raise (self._shape - 1.0) / self._scale
-        elif statistic == 'var':
-            return self._shape / np.square(self._scale)
         elif statistic == 2:
             return self._shape * (self._shape + 1.0) / np.square(self._scale)
+        elif statistic == 'var':
+            return self._shape / np.square(self._scale)
         elif statistic == 'log':
-            return tf.digamma(self._shape) - tf.lgamma(self._scale)
+            return tf.digamma(self._shape) - tf.log(self._scale)
         else:
             return super(GammaDistribution, self)._statistic(statistic)
 
@@ -286,26 +293,24 @@ class DirichletDistribution(Distribution):
         self._alpha = as_tensor(alpha)
 
     def _statistic(self, statistic):
-        if statistic == 'alpha_total':
-            return tf.reduce_sum(self._alpha, -1, True, 'alpha_total')
-        elif statistic == 'alpha_totalm1':
-            return tf.reduce_sum(self._alpha - 1.0, -1, True, 'alpha_totalm1')
+        if statistic == '_alpha_total':
+            return tf.reduce_sum(self._alpha, -1, True)
+        elif statistic == '_alpha_totalm1':
+            return tf.reduce_sum(self._alpha - 1.0, -1, True)
         elif statistic == 1:
-            return tf.divide(self._alpha, self.statistic('alpha_total'), 'mean')
-        elif statistic == 'mode':
-            return (self._alpha - 1) / self.statistic('alpha_totalm1')
-        elif statistic == 'var':
-            alpha_total = self.statistic('alpha_total')
-            return self._alpha * (alpha_total - self._alpha) / \
-                (tf.square(alpha_total) * (alpha_total + 1.0))
+            return tf.divide(self._alpha, self.statistic('_alpha_total'), 'mean')
         elif statistic == 2:
             return tf.square(self.statistic(1)) + self.statistic('var')
-        elif statistic == 'log_normalization':
+        elif statistic == 'var':
+            _alpha_total = self.statistic('_alpha_total')
+            return self._alpha * (_alpha_total - self._alpha) / \
+                (tf.square(_alpha_total) * (_alpha_total + 1.0))
+        elif statistic == '_log_normalization':
             return tf.reduce_sum(tf.lgamma(self._alpha), -1) - \
-                tf.lgamma(self.statistic('alpha_total')[..., 0])
+                tf.lgamma(self.statistic('_alpha_total')[..., 0])
         elif statistic == 'entropy':
-            return self.statistic('log_normalization') + self.statistic('alpha_totalm1')[..., 0] * \
-                tf.digamma(self.statistic('alpha_total')[..., 0]) - \
+            return self.statistic('_log_normalization') + self.statistic('_alpha_totalm1')[..., 0] * \
+                tf.digamma(self.statistic('_alpha_total')[..., 0]) - \
                 tf.reduce_sum((self._alpha - 1.0) * tf.digamma(self._alpha), -1)
         else:
             return super(DirichletDistribution, self)._statistic(statistic)
@@ -329,24 +334,24 @@ class MultiNormalDistribution(Distribution):
         precision of the multivariate normal distribution
     """
     def __init__(self, mean, precision):
-        super(MultiNormalDistribution, self).__init__(['mean', 'precision'])
+        super(MultiNormalDistribution, self).__init__(['mean', 'precision'], ['cov', 'outer'])
         self._mean = as_tensor(mean)
         self._precision = as_tensor(precision)
 
     def _statistic(self, statistic):
         if statistic == 1:
             return self._mean
+        elif statistic == 2:
+            return tf.square(self._mean) + self.statistic('var')
         elif statistic == 'cov':
             return tf.matrix_inverse(self._precision)
         elif statistic == 'var':
             return tf.matrix_diag_part(self.statistic('cov'))
         elif statistic == 'outer':
             return self._mean[..., None, :] * self._mean[..., :, None] + self.statistic('cov')
-        elif statistic == 2:
-            return tf.square(self._mean) + self.statistic('var')
         elif statistic == 'entropy':
-            return 0.5 * (LOG2PIE * self.statistic('ndim') - self.statistic('_log_det_precision'))
-        elif statistic == 'ndim':
+            return 0.5 * (LOG2PIE * self.statistic('_ndim') - self.statistic('_log_det_precision'))
+        elif statistic == '_ndim':
             return tf.to_float(self._mean.get_shape()[-1])
         elif statistic == '_log_det_precision':
             return tf.log(tf.matrix_determinant(self._precision))
@@ -380,7 +385,7 @@ class WishartDistribution(Distribution):
         scale matrix
     """
     def __init__(self, shape, scale):
-        super(WishartDistribution, self).__init__(['shape', 'scale'])
+        super(WishartDistribution, self).__init__(['shape', 'scale'], ['log_det'])
         self._shape = as_tensor(shape)
         self._scale = as_tensor(scale)
 
@@ -395,14 +400,14 @@ class WishartDistribution(Distribution):
             return self._shape * (tf.square(inv_scale) + diag[..., None, :] * diag[..., :, None])
         elif statistic == 2:
             return tf.square(self.statistic(1)) + self.statistic('var')
-        elif statistic == 'ndim':
+        elif statistic == '_ndim':
             return tf.to_float(self._scale.get_shape()[-1])
         elif statistic == 'log_det':
-            p = self.statistic('ndim')
+            p = self.statistic('_ndim')
             return multidigamma(0.5 * self._shape, p) + p * LOG2 + \
                 tf.log(tf.matrix_determinant(self._scale))
         elif statistic == 'entropy':
-            p = self.statistic('ndim')
+            p = self.statistic('_ndim')
             return -0.5 * (p + 1.0) * tf.log(tf.matrix_determinant(self._scale)) + \
                 0.5 * p * (p + 1.0) * LOG2 + lmultigamma(0.5 * self._shape, p) - \
                 0.5 * (self._shape - p - 1.0) * multidigamma(0.5 * self._shape, p) + \

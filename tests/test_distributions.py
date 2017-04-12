@@ -6,19 +6,43 @@ import numpy as np
 import elboflow as ef
 
 
-def _scipy_var(dist):
-    """Unified access to variance of scipy distributions."""
-    if hasattr(dist, 'var'):
-        return dist.var()
-    elif hasattr(dist, 'cov'):
-        return np.diag(dist.cov() if callable(dist.cov) else dist.cov)
-    else:
-        raise NotImplementedError("%s does not support 'var'" % dist)
+def evaluate_scipy_statistic(dist, statistic):
+    # Compute the exact values
+    if statistic == 'entropy':
+        return dist.entropy()
+    elif isinstance(statistic, numbers.Number):
+        if hasattr(dist, 'moment'):
+            return dist.moment(statistic)
+        elif statistic == 1:
+            return dist.mean() if callable(dist.mean) else dist.mean
+        elif statistic == 2:
+            return evaluate_scipy_statistic(dist, 1) ** 2 + evaluate_scipy_statistic(dist, 'var')
+        else:
+            raise KeyError(statistic)
+    elif statistic == 'var':
+        if hasattr(dist, 'var'):
+            return dist.var()
+        elif hasattr(dist, 'cov'):
+            return np.diag(dist.cov() if callable(dist.cov) else dist.cov)
+    elif statistic == 'cov':
+        if hasattr(dist, 'cov'):
+            return dist.cov() if callable(dist.cov) else dist.cov
+    elif statistic == 'outer':
+        mean = evaluate_scipy_statistic(dist, 1)
+        cov = evaluate_scipy_statistic(dist, 'cov')
+        return mean[..., None] * mean[..., None, :] + cov
+    elif statistic in ('log', 'log_det'):
+        num_samples = 1000
+        x = dist.rvs(size=num_samples)
+        if statistic == 'log':
+            statistic = np.log(x)
+        elif statistic == 'log_det':
+            statistic = np.log(np.linalg.det(x))
+        else:
+            raise KeyError(statistic)
+        return np.mean(statistic, axis=0), np.std(statistic, axis=0) / np.sqrt(num_samples - 1)
 
-
-def _scipy_mean(dist):
-    """Unified access to mean of scipy distributions."""
-    return dist.mean() if callable(dist.mean) else dist.mean
+    raise RuntimeError("cannot evaluate statistic '%s' on %s" % (statistic, dist))
 
 
 @pytest.fixture(params=it.chain(
@@ -40,30 +64,25 @@ def distribution_pair(request):
     return request.param
 
 
-@pytest.mark.parametrize('statistic', [1, 2, 'var', 'entropy'])
-def test_statistic(session, distribution_pair, statistic):
+def test_statistic(session, distribution_pair):
     # Get the statistic from the tensorflow object
     ef_dist, scipy_dist = distribution_pair
-    actual = session.run(ef.evaluate_statistic(ef_dist, statistic))
 
-    # Get the statistic from scipy.stats
-    if isinstance(statistic, numbers.Number):
-        if hasattr(scipy_dist, 'moment'):
-            desired = scipy_dist.moment(statistic)
-        elif statistic == 1:
-            desired = _scipy_mean(scipy_dist)
-        elif statistic == 2:
-            desired = _scipy_mean(scipy_dist) ** 2 + _scipy_var(scipy_dist)
+    for statistic in ef_dist.supported_statistics:
+        actual = session.run(ef.evaluate_statistic(ef_dist, statistic))
+        desired = evaluate_scipy_statistic(scipy_dist, statistic)
+
+        # Demand 3-sigma consistency if the statistic is sampled
+        err_msg = "inconsistent statistic '%s' for `%s`: expected %%s but got %s" % \
+            (statistic, ef_dist.to_str(session), actual)
+        if isinstance(desired, tuple):
+            desired_mean, desired_std = desired
+            z_score = (actual - desired_mean) / desired_std
+            np.testing.assert_array_less(np.abs(z_score), 3, err_msg % \
+                ("%s +- %s" % (desired_mean, desired_std)))
+        # Or demand close results
         else:
-            raise KeyError(statistic)
-    elif statistic == 'var':
-        desired = _scipy_var(scipy_dist)
-    elif statistic == 'entropy':
-        desired = scipy_dist.entropy()
-    else:
-        raise KeyError(statistic)
-
-    np.testing.assert_allclose(actual, desired, 1e-5)
+            np.testing.assert_allclose(actual, desired, 1e-5, err_msg=err_msg % desired)
 
 
 def test_log_proba(session, distribution_pair):
