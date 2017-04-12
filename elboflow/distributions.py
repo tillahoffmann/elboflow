@@ -426,6 +426,13 @@ class WishartDistribution(Distribution):
         shape parameter or degrees of freedom which must be greater than `ndim - 1`
     scale : array_like
         scale matrix
+
+    Notes
+    -----
+    We use an unconventional parametrization of the Wishart distribution in contrast to the standard
+    approach used, e.g. on [wikipedia](https://en.wikipedia.org/wiki/Wishart_distribution). In
+    particular, our scale parameter differs by a matrix inverse to be consistent with the
+    parametrization of the gamma distribution above.
     """
     def __init__(self, shape, scale):
         super(WishartDistribution, self).__init__(['shape', 'scale'], ['log_det'])
@@ -447,7 +454,7 @@ class WishartDistribution(Distribution):
             return tf.to_float(self.sample_shape[-1])
         elif statistic == 'log_det':
             p = self.statistic('_ndim')
-            return multidigamma(0.5 * self._shape, p) + p * LOG2 + \
+            return multidigamma(0.5 * self._shape, p) + p * LOG2 - \
                 tf.log(tf.matrix_determinant(self._scale))
         elif statistic == 'entropy':
             p = self.statistic('_ndim')
@@ -473,5 +480,5 @@ class WishartDistribution(Distribution):
 
         return 0.5 * x_logdet * (shape_1 - p - 1.0) - \
             0.5 * tf.reduce_sum(scale_1 * x_1, axis=(-1, -2)) - \
-            0.5 * shape_1* p * LOG2 - lmultigamma(0.5 * shape, p) + \
+            0.5 * shape_1 * p * LOG2 - lmultigamma(0.5 * shape, p) + \
             0.5 * shape_1 * evaluate_statistic(scale, 'log_det')

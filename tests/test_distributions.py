@@ -52,8 +52,8 @@ def evaluate_scipy_statistic(dist, statistic):
      for shape, scale in [(.1, 3), (50, 2)]],
     [(ef.DirichletDistribution(alpha), scipy.stats.dirichlet(alpha)) for alpha in
      [np.ones(5), np.random.gamma(1, 1, 7)]],
-    [(ef.WishartDistribution(shape, scale), scipy.stats.wishart(shape, scale))
-     for shape, scale in [(4, np.eye(2))]],
+    [(ef.WishartDistribution(shape, scale), scipy.stats.wishart(shape, np.linalg.inv(scale)))
+     for shape, scale in [(4, 10 * np.eye(2)), (3, [(2, -1), (-1, 3)])]],
     [(ef.CategoricalDistribution(p), scipy.stats.multinomial(1, p)) for p in
      [np.ones(3) / 3, np.random.dirichlet(np.ones(7))]],
     [(ef.MultiNormalDistribution(mean, precision),
@@ -100,7 +100,10 @@ def test_log_proba(session, distribution_pair):
         desired = scipy_dist.logpmf(scipy_x)
     else:
         raise NotImplementedError("%s does not support 'log*'" % scipy_dist)
-    np.testing.assert_allclose(actual, desired, 1e-5)
+    np.testing.assert_allclose(
+        actual, desired, 1e-5, err_msg="inconsistent log probability for '%s': expected %s but got "
+        " %s" % (ef_dist.to_str(session), desired, actual)
+    )
 
 
 def test_normal_linear_log_likelihood(session):
