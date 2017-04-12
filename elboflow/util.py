@@ -15,11 +15,11 @@ class BaseDistribution:
     pass
 
 
-def as_tensor(x):
+def as_tensor(x, dtype=None):
     """Convert `x` to a tensor or distribution."""
     if isinstance(x, BaseDistribution):
         return x
-    return tf.convert_to_tensor(x, FLOATX)
+    return tf.convert_to_tensor(x, dtype or FLOATX)
 
 
 def assert_constant(x):
