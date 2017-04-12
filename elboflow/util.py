@@ -15,12 +15,19 @@ class BaseDistribution:
     pass
 
 
-def as_tensor(x):
+def as_tensor(x, dtype=None):
+    """Convert `x` to a tensor or distribution."""
     if isinstance(x, BaseDistribution):
         return x
-    return tf.convert_to_tensor(x, FLOATX)
+    return tf.convert_to_tensor(x, dtype or FLOATX)
 
 
+def assert_constant(x):
+    """Assert that `x` is not a distribution."""
+    assert not isinstance(x, BaseDistribution), "expected a constant but got %s" % x
+
+
+@ft.wraps(np.tril)
 def tril(x, k=0, name=None):
     return tf.matrix_band_part(x, -1, k, name)
 
@@ -73,6 +80,19 @@ def get_positive_definite_variable(name, shape=None, dtype=None, initializer=Non
     x = get_cholesky_variable(name, shape, dtype, initializer, regularizer, trainable, collections,
                               caching_device, partitioner, validate_shape, custom_getter, transform)
     return tf.matmul(x, x, True)
+
+
+def get_normalized_variable(name, shape=None, dtype=None, initializer=None, regularizer=None,
+                            trainable=True, collections=None, caching_device=None,
+                            partitioner=None, validate_shape=True, custom_getter=None,
+                            transform=None):
+    """
+    Get an existing variable or create a new one such that it sums to one along the last dimension.
+    """
+    x = get_variable(name, shape, dtype, initializer, regularizer, trainable, collections,
+                     caching_device, partitioner, validate_shape, custom_getter)
+    transform = transform or tf.nn.softmax
+    return transform(x)
 
 
 def multidigamma(x, p):
