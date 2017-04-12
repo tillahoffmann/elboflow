@@ -4,7 +4,7 @@ import numpy as np
 from .util import minmax
 
 
-def evaluate_pdf(session, distribution, start=None, stop=None, num=50, scale=3):
+def evaluate_proba(session, distribution, start=None, stop=None, num=50, scale=3):
     """
     Evaluate the probability density function of a distribution.
 
@@ -35,7 +35,7 @@ def evaluate_pdf(session, distribution, start=None, stop=None, num=50, scale=3):
     return lin, np.exp(session.run(distribution.log_proba(lin)))
 
 
-def plot_pdf(session, distribution, start=None, stop=None, num=50, scale=3, reference=None, ax=None,
+def plot_proba(session, distribution, start=None, stop=None, num=50, scale=3, reference=None, ax=None,
              **kwargs):
     """
     Plot the probability density function of a (multivariate) distribution.
@@ -64,7 +64,7 @@ def plot_pdf(session, distribution, start=None, stop=None, num=50, scale=3, refe
     """
     # Plot the PDF
     ax = ax or plt.gca()
-    lin, pdf = evaluate_pdf(session, distribution, start, stop, num, scale)
+    lin, pdf = evaluate_proba(session, distribution, start, stop, num, scale)
     lines = ax.plot(lin, pdf, **kwargs)
 
     # Plot the reference values if given
