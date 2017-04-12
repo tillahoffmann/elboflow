@@ -136,6 +136,29 @@ class Distribution(BaseDistribution):
         """
         raise NotImplementedError
 
+    @property
+    def sample_rank(self):
+        """int : rank of samples (0 for scalars, 1 for vectors, 2 for matrices, etc.)"""
+        raise NotImplementedError
+
+    @property
+    def batch_shape(self):
+        """tf.Tensor : shape of batches of samples"""
+        return self.shape[:-self.sample_rank]
+
+    @property
+    def sample_shape(self):
+        """tf.Tensor : shape of samples"""
+        if self.sample_rank > 0:
+            return self.shape[-self.sample_rank:]
+        else:
+            return as_tensor([], tf.int32)
+
+    @property
+    def shape(self):
+        """tf.Tensor : shape of batches and samples"""
+        return tf.shape(self.mean)
+
 
 class NormalDistribution(Distribution):
     """
@@ -164,6 +187,10 @@ class NormalDistribution(Distribution):
             return tf.square(self.statistic(1)) + self.statistic('var')
         else:
             return super(NormalDistribution, self)._statistic(statistic)
+
+    @property
+    def sample_rank(self):
+        return 0
 
     @staticmethod
     def log_likelihood(x, mean, precision):  # pylint: disable=W0221
@@ -227,6 +254,10 @@ class GammaDistribution(Distribution):
         else:
             return super(GammaDistribution, self)._statistic(statistic)
 
+    @property
+    def sample_rank(self):
+        return 0
+
     @staticmethod
     def log_likelihood(x, shape, scale):  # pylint: disable=W0221
         shape_1 = evaluate_statistic(shape, 1)
@@ -257,6 +288,10 @@ class CategoricalDistribution(Distribution):
             return self._p * (1.0 - self._p)
         else:
             return super(CategoricalDistribution, self)._statistic(statistic)
+
+    @property
+    def sample_rank(self):
+        return 1
 
     @staticmethod
     def log_likelihood(x, p):  # pylint: disable=W0221
@@ -315,6 +350,10 @@ class DirichletDistribution(Distribution):
         else:
             return super(DirichletDistribution, self)._statistic(statistic)
 
+    @property
+    def sample_rank(self):
+        return 1
+
     @staticmethod
     def log_likelihood(x, alpha):  # pylint: disable=W0221
         assert_constant(alpha)
@@ -352,11 +391,15 @@ class MultiNormalDistribution(Distribution):
         elif statistic == 'entropy':
             return 0.5 * (LOG2PIE * self.statistic('_ndim') - self.statistic('_log_det_precision'))
         elif statistic == '_ndim':
-            return tf.to_float(self._mean.get_shape()[-1])
+            return tf.to_float(self.sample_shape[-1])
         elif statistic == '_log_det_precision':
             return tf.log(tf.matrix_determinant(self._precision))
         else:
             return super(MultiNormalDistribution, self)._statistic(statistic)
+
+    @property
+    def sample_rank(self):
+        return 1
 
     @staticmethod
     def log_likelihood(x, mean, precision):  # pylint: disable=W0221
@@ -366,7 +409,7 @@ class MultiNormalDistribution(Distribution):
             x_1[..., None, :] * mean_1[..., :, None] - \
             x_1[..., :, None] * mean_1[..., None, :]
 
-        ndim = tf.to_float(mean_1.get_shape()[-1])
+        ndim = tf.to_float(tf.shape(mean_1)[-1])
 
         return - 0.5 * ndim * LOG2PI + \
             0.5 * evaluate_statistic(precision, 'log_det') - \
@@ -401,7 +444,7 @@ class WishartDistribution(Distribution):
         elif statistic == 2:
             return tf.square(self.statistic(1)) + self.statistic('var')
         elif statistic == '_ndim':
-            return tf.to_float(self._scale.get_shape()[-1])
+            return tf.to_float(self.sample_shape[-1])
         elif statistic == 'log_det':
             p = self.statistic('_ndim')
             return multidigamma(0.5 * self._shape, p) + p * LOG2 + \
@@ -415,6 +458,10 @@ class WishartDistribution(Distribution):
         else:
             return super(WishartDistribution, self)._statistic(statistic)
 
+    @property
+    def sample_rank(self):
+        return 2
+
     @staticmethod
     def log_likelihood(x, shape, scale):  # pylint: disable=W0221
         assert_constant(shape)
@@ -422,7 +469,7 @@ class WishartDistribution(Distribution):
         x_1 = evaluate_statistic(x, 1)
         shape_1 = evaluate_statistic(shape, 1)
         scale_1 = evaluate_statistic(scale, 1)
-        p = tf.to_float(scale_1.get_shape()[-1])
+        p = tf.to_float(tf.shape(scale_1)[-1])
 
         return 0.5 * x_logdet * (shape_1 - p - 1.0) - \
             0.5 * tf.reduce_sum(scale_1 * x_1, axis=(-1, -2)) - \
