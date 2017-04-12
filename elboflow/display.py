@@ -1,4 +1,5 @@
 from matplotlib import pyplot as plt
+from matplotlib import patches as mpatches
 import numpy as np
 
 from .util import minmax
@@ -102,12 +103,13 @@ def plot_comparison(session, distribution, reference, scale=3, plot_diag=True, a
     # Plot the estimates against the reference
     ax = ax or plt.gca()
     kwargs_default = {
-        'linestyle': 'none'
+        'linestyle': 'none',
+        'marker': '.',
     }
     kwargs_default.update(kwargs)
     reference = np.atleast_1d(reference)
     y, yerr = session.run([distribution.mean, distribution.std])
-    lines = ax.errorbar(reference, y, yerr * scale, **kwargs_default)
+    lines = ax.errorbar(reference.ravel(), y.ravel(), yerr.ravel() * scale, **kwargs_default)
 
     # Plot a diagonal line
     if plot_diag:
@@ -150,3 +152,28 @@ def plot_cov(session, distribution, vmin='auto', vmax='auto', cmap='coolwarm', a
         vmin = - np.max(np.abs(cov))
 
     return ax.imshow(cov, cmap=cmap, vmin=vmin, vmax=vmax, **kwargs)
+
+
+def ellipse_from_cov(xy, cov, scale=3, **kwargs):
+    """
+    Create an ellipse from a covariance matrix.
+
+    Parameters
+    ----------
+    xy : np.ndarray
+        position of the ellipse
+    cov : np.ndarray
+        covariance matrix
+    scale : float
+        scale of the ellipse (default is three standard deviations)
+    kwargs : dict
+        keyword arguments passed on to `matplotlib.patches.Ellipse`
+
+    Returns
+    -------
+    ellipse
+    """
+    evals, evecs = np.linalg.eigh(cov)
+    angle = np.arctan2(*evecs[:, 1])
+    width, height = scale * np.sqrt(evals)
+    return mpatches.Ellipse(xy, width, height, np.rad2deg(angle), **kwargs)
