@@ -244,7 +244,7 @@ class CategoricalDistribution(Distribution):
     def _statistic(self, statistic):
         if statistic == 'entropy':
             return - tf.reduce_sum(self._p * tf.log(self._p), axis=-1)
-        elif statistic in (1, 2):
+        elif isinstance(statistic, numbers.Real) and statistic > 0:
             return self._p
         elif statistic == 'var':
             return self._p * (1.0 - self._p)
@@ -253,7 +253,7 @@ class CategoricalDistribution(Distribution):
 
     @staticmethod
     def log_likelihood(x, p):  # pylint: disable=W0221
-        return tf.reduce_sum(x * evaluate_statistic(p, 'log'), axis=-1)
+        return tf.reduce_sum(evaluate_statistic(x, 1) * evaluate_statistic(p, 'log'), axis=-1)
 
     @staticmethod
     def mixture_log_likelihood(z, expected_log_likelihood):
@@ -386,17 +386,21 @@ class WishartDistribution(Distribution):
 
     def _statistic(self, statistic):
         if statistic == 1:
-            return self._shape[..., None, None] * self.statistic('inv_scale')
-        elif statistic == 'inv_scale':
+            return self._shape[..., None, None] * self.statistic('_inv_scale')
+        elif statistic == '_inv_scale':
             return tf.matrix_inverse(self._scale)
         elif statistic == 'var':
-            inv_scale = self.statistic('inv_scale')
+            inv_scale = self.statistic('_inv_scale')
             diag = tf.matrix_diag_part(inv_scale)
             return self._shape * (tf.square(inv_scale) + diag[..., None, :] * diag[..., :, None])
         elif statistic == 2:
             return tf.square(self.statistic(1)) + self.statistic('var')
         elif statistic == 'ndim':
             return tf.to_float(self._scale.get_shape()[-1])
+        elif statistic == 'log_det':
+            p = self.statistic('ndim')
+            return multidigamma(0.5 * self._shape, p) + p * LOG2 + \
+                tf.log(tf.matrix_determinant(self._scale))
         elif statistic == 'entropy':
             p = self.statistic('ndim')
             return -0.5 * (p + 1.0) * tf.log(tf.matrix_determinant(self._scale)) + \
