@@ -3,6 +3,8 @@ import functools as ft
 import numpy as np
 import tensorflow as tf
 
+from .display import *
+
 
 class Model:
     """
@@ -55,7 +57,7 @@ class Model:
         else:
             raise NotImplementedError
 
-    def optimize(self, steps, fetches=None, break_on_interrupt=True):
+    def optimize(self, steps, fetches=None, break_on_interrupt=True, tqdm=None):
         """
         Optimize the evidence lower bound and trace statistics.
 
@@ -70,6 +72,8 @@ class Model:
         """
         if isinstance(steps, numbers.Integral):
             steps = range(steps)
+        if tqdm is not None:
+            steps = tqdm(steps)
         fetches = fetches or []
         _fetches = [self.train_op] + fetches
 
@@ -77,7 +81,7 @@ class Model:
         try:
             # Run the optimization
             for _ in steps:
-                _, values = self.session.run(_fetches)
+                _, *values = self.session.run(_fetches)
                 # Add the values to the dictionary
                 for fetch, value in zip(fetches, values):
                     trace[fetch].append(value)
@@ -94,3 +98,23 @@ class Model:
 
     def __getitem__(self, key):
         return self.factors[key]
+
+    @ft.wraps(plot_comparison)
+    def plot_comparison(self, factor, reference=None, scale=3, plot_diag=True, aspect='equal',
+                        ax=None, **kwargs):
+        # Use the graph in case not all operations are cached
+        with self.graph.as_default():
+            return plot_comparison(self.session, self.factors[factor], reference, scale,
+                                   plot_diag, aspect, ax, **kwargs)
+
+    @ft.wraps(plot_proba)
+    def plot_proba(self, factor, start=None, stop=None, num=50, scale=3, reference=None,
+                   ax=None, **kwargs):
+        with self.graph.as_default():
+            return plot_proba(self.session, self.factors[factor], start, stop, num, scale,
+                              reference, ax, **kwargs)
+
+    @ft.wraps(plot_cov)
+    def plot_cov(self, factor, vmin='auto', vmax='auto', cmap='coolwarm', ax=None, **kwargs):
+        with self.graph.as_default():
+            return plot_cov(self.session, self.factors[factor], vmin, vmax, cmap, ax, **kwargs)
