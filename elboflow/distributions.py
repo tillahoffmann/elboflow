@@ -200,7 +200,7 @@ class NormalDistribution(Distribution):
                       evaluate_statistic(precision, 1) * chi2)
 
     @staticmethod
-    def linear_log_likelihood(y, x, theta, tau):
+    def linear_log_likelihood(x, y, theta, tau):
         """
         Evaluate the log likelihood of the observation `y` given features `x`, coefficients `theta`,
         and noise precision `tau`.
