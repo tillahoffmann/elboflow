@@ -1,5 +1,6 @@
 import pytest
 import elboflow as ef
+import tensorflow as tf
 import numpy as np
 
 
@@ -14,7 +15,7 @@ def model():
         # Define a prior
         mu_prior = ef.NormalDistribution(0, 1e-3)
         # Return the log joint and the factor
-        return mu.log_proba(x) + mu_prior.log_proba(mu), {'mu': mu}
+        return tf.reduce_sum(mu.log_proba(x)) + mu_prior.log_proba(mu), {'mu': mu}
 
     x = np.random.normal(0, 1, 100)
     return ef.Model(evaluate_log_joint, [x])
