@@ -22,7 +22,8 @@ class Model:
     create_session : callable
         function to create a session.
     """
-    def __init__(self, evaluate_log_joint, args=None, create_optimizer=None, create_session=None):
+    def __init__(self, evaluate_log_joint=None, args=None, create_optimizer=None,
+                 create_session=None):
         self.create_optimizer = create_optimizer or ft.partial(tf.train.AdamOptimizer, 0.1)
         self.create_session = create_session or tf.Session
         self._evaluate_log_joint = evaluate_log_joint
@@ -34,7 +35,8 @@ class Model:
             # Evaluate the entropies
             self.entropies = {key: value.entropy for key, value in self.factors.items()}
             # Compute the lower bound
-            self.elbo = self.log_joint + sum(self.entropies.values())
+            self.elbo = self.log_joint + \
+                sum([tf.reduce_sum(entropy) for entropy in self.entropies.values()])
             # Define a loss
             self.loss = - self.elbo
             self.train_op = self.optimizer.minimize(self.loss)
@@ -74,7 +76,17 @@ class Model:
             steps = range(steps)
         if tqdm is not None:
             steps = tqdm(steps)
-        fetches = fetches or []
+
+        # Prepare the fetches
+        if fetches is None:
+            fetches = []
+        elif isinstance(fetches, (tf.Tensor, tf.Variable, str)):
+            fetches = [fetches]
+        elif hasattr(fetches, '__iter__'):
+            fetches = list(fetches)
+        else:
+            raise ValueError("cannot convert %s to valid fetches" % fetches)
+
         _fetches = [self.train_op] + fetches
 
         trace = {fetch: [] for fetch in fetches}
