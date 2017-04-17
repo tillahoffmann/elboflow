@@ -117,7 +117,7 @@ def test_normal_linear_log_likelihood(session):
     # Compare the log-likelihoods (this does NOT test the correctness for distributions but only
     # for fixed values)
     desired = scipy.stats.norm.logpdf(y, predictor, scale)
-    actual = session.run(ef.NormalDistribution.linear_log_likelihood(y, x, theta, tau))
+    actual = session.run(ef.NormalDistribution.linear_log_likelihood(x, y, theta, tau))
     np.testing.assert_allclose(actual, desired, 1e-5)
 
 
