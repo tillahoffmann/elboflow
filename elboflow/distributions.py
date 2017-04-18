@@ -40,7 +40,7 @@ def evaluate_statistic(x, statistic, name=None, sample_rank=None):
     elif statistic == 'log':
         return tf.log(x, name)
     elif statistic == 'log1m':
-        return tf.log(1.0 - x, name)
+        return tf.log1p(- x, name)
     elif statistic == 'lgamma':
         return tf.lgamma(x, name)
     elif statistic == 'var':
@@ -210,7 +210,7 @@ class Distribution(BaseDistribution):
             elif statistic == 'log':
                 feed_dict[op] = np.log(x)
             elif statistic == 'log1m':
-                feed_dict[op] = np.log(1.0 - x)
+                feed_dict[op] = np.log1p(- x)
             elif statistic == 'lgamma':
                 feed_dict[op] = scipy.special.gammaln(x)
             elif statistic == 'var':
