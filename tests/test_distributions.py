@@ -75,7 +75,7 @@ def test_statistic(session, distribution_pair):
         with ef.capture_stdstream('stderr') as stderr:
             desired = evaluate_scipy_statistic(scipy_dist, statistic)
 
-        if 'algorithm does not converge' in stderr.value:
+        if 'IntegrationWarning' in stderr.value:
             pytest.skip(stderr.value)
 
         # Demand 3-sigma consistency if the statistic is sampled
