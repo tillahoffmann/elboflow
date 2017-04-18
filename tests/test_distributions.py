@@ -59,6 +59,8 @@ def evaluate_scipy_statistic(dist, statistic):
     [(ef.MultiNormalDistribution(mean, precision),
       scipy.stats.multivariate_normal(mean, np.linalg.inv(precision))) for mean, precision
      in [(np.zeros(2), np.eye(2)), ([-3, 2], [[4, -1], [-1, 2]])]],
+    [(ef.BetaDistribution(a, b), scipy.stats.beta(a, b)) for a, b in
+     np.random.gamma(1, size=(3, 2))]
 ))
 def distribution_pair(request):
     return request.param
@@ -70,7 +72,11 @@ def test_statistic(session, distribution_pair):
 
     for statistic in ef_dist.supported_statistics:
         actual = session.run(ef.evaluate_statistic(ef_dist, statistic))
-        desired = evaluate_scipy_statistic(scipy_dist, statistic)
+        with ef.capture_stdstream('stderr') as stderr:
+            desired = evaluate_scipy_statistic(scipy_dist, statistic)
+
+        if 'IntegrationWarning' in stderr.value:
+            pytest.skip(stderr.value)
 
         # Demand 3-sigma consistency if the statistic is sampled
         err_msg = "inconsistent statistic '%s' for `%s`: expected %%s but got %s" % \
@@ -101,9 +107,13 @@ def test_log_proba(session, distribution_pair):
     else:
         raise NotImplementedError("%s does not support 'log*'" % scipy_dist)
     np.testing.assert_allclose(
-        actual, desired, 1e-5, err_msg="inconsistent log probability for '%s': expected %s but got "
-        " %s" % (ef_dist.to_str(session), desired, actual)
+        actual, desired, 1e-5, err_msg="inconsistent log probability for '%s' at %s: expected %s "
+        "but got %s" % (ef_dist.to_str(session), ef_x, desired, actual)
     )
+
+    # Make sure we can also evaluate the log proba if `x` is a distribution
+    value = session.run(ef_dist.log_proba(ef_dist))
+    assert np.isfinite(value), "log probability is not finite for '%s'" % ef_dist.to_str(session)
 
 
 def test_normal_linear_log_likelihood(session):

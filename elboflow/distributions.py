@@ -1,10 +1,11 @@
 import numbers
+import scipy.special
 import tensorflow as tf
 
 from .util import *
 
 
-def evaluate_statistic(x, statistic):
+def evaluate_statistic(x, statistic, name=None, sample_rank=None):
     """
     Evaluate statistic of a value or distribution.
 
@@ -14,23 +15,40 @@ def evaluate_statistic(x, statistic):
         value or distribution
     statistic : int, str or callable
         statistic to evaluate
+    name : str or None
+        name for the resulting operation
+    sample_rank : int
+        rank of the distribution from which the values were drawn (only necessary for some
+        statistics)
     """
     if isinstance(x, Distribution):
         return x.statistic(statistic)
 
     x = as_tensor(x)
-    if isinstance(statistic, numbers.Number):
-        return x ** statistic
+    if isinstance(statistic, numbers.Real):
+        return tf.pow(x, statistic, name)
     elif statistic == 'entropy':
-        return tf.constant(0.0)
+        assert sample_rank is not None, "`sample_rank` must be provided to calculate the entropy"
+        shape = tf.shape(x)
+        if sample_rank > 0:
+            shape = shape[:-sample_rank]
+        return tf.zeros(shape)
     elif statistic == 'outer':
-        return x[..., None, :] * x[..., :, None]
+        return tf.multiply(x[..., None, :], x[..., :, None], name)
     elif statistic == 'log_det':
-        return tf.log(tf.matrix_determinant(x))
+        return tf.log(tf.matrix_determinant(x), name)
     elif statistic == 'log':
-        return tf.log(x)
+        return tf.log(x, name)
+    elif statistic == 'log1m':
+        return tf.log1p(- x, name)
     elif statistic == 'lgamma':
-        return tf.lgamma(x)
+        return tf.lgamma(x, name)
+    elif statistic == 'var':
+        return tf.zeros_like(x)
+    elif statistic == 'cov':
+        shape = tf.shape(x)
+        shape = tf.concat([shape, shape[-1:]], 0)
+        return tf.zeros(shape, x.dtype)
     else:
         raise KeyError("'%s' is not a recognized statistic" % statistic)
 
@@ -51,17 +69,19 @@ class Distribution(BaseDistribution):
         if supported_statistics:
             self.supported_statistics.extend(supported_statistics)
 
-    def _statistic(self, statistic):
+    def _statistic(self, statistic, name):
         if statistic == 'outer':
             mean = self.statistic(1)
-            return mean[..., :, None] * mean[..., None, :] + tf.diag(self.statistic('var'))
+            return tf.add(mean[..., :, None] * mean[..., None, :], self.statistic('cov'), name)
+        elif statistic == 'cov':
+            return tf.diag(self.statistic('var'), name)
         elif statistic == 'std':
-            return tf.sqrt(self.statistic('var'))
+            return tf.sqrt(self.statistic('var'), name)
         else:
             raise KeyError("'%s' is not a recognized statistic for `%s`" %
                            (statistic, self.__class__.__name__))
 
-    def statistic(self, statistic):
+    def statistic(self, statistic, name=None):
         """
         Evaluate a statistic of the distribution.
 
@@ -69,16 +89,18 @@ class Distribution(BaseDistribution):
         ----------
         statistic : str, int, or callable
             statistic to evaluate
+        name : str or None
+            name of the resulting operation
         """
         # Get the statistic from the cache
         _statistic = self._statistics.get(statistic)
         if _statistic is None:
-            _statistic = self._statistic(statistic)
+            _statistic = self._statistic(statistic, name)
             # Save the statistic in the cache
             self._statistics[statistic] = _statistic
         return _statistic
 
-    def log_proba(self, x):
+    def log_proba(self, x, name=None):
         """
         Evaluate the log of the probability distribution evaluated at `x`.
 
@@ -86,8 +108,10 @@ class Distribution(BaseDistribution):
         ----------
         x : tf.Tensor or Distribution
             point at which to evaluate the log pdf
+        name : str or None
+            name of the resulting operation
         """
-        return self.log_likelihood(x, **self.parameters)
+        return self.log_likelihood(x, **self.parameters, name=name)
 
     @property
     def parameters(self):
@@ -125,7 +149,7 @@ class Distribution(BaseDistribution):
         return self.statistic('entropy')
 
     @staticmethod
-    def log_likelihood(x, *parameters):
+    def log_likelihood(x, *parameters, name=None):
         """
         Evaluate the expected log likelihood for `x` given `parameters`.
 
@@ -133,6 +157,8 @@ class Distribution(BaseDistribution):
         ----------
         x : tf.Tensor, or Distribution
             value or distribution at which to evaluate the expected log likelihood
+        name : str or None
+            name of the resulting operation
         """
         raise NotImplementedError
 
@@ -159,6 +185,43 @@ class Distribution(BaseDistribution):
         """tf.Tensor : shape of batches and samples"""
         return tf.shape(self.mean)
 
+    def feed_dict(self, x):
+        """
+        Construct a feed dictionary that replaces all statistics of the distribution as if it was
+        a delta distribution at `value`.
+        """
+        # Build a feed dictionary (this mirrors `evaluate_statistic` but must use numpy functions
+        # rather than tensorflow functions)
+        feed_dict = {}
+        x = np.asarray(x)
+        for statistic, op in self._statistics.items():
+            # Skip "private" statistics starting with an underscore
+            if isinstance(statistic, str) and statistic.startswith('_'):
+                continue
+            elif isinstance(statistic, numbers.Real):
+                feed_dict[op] = x ** statistic
+            elif statistic == 'entropy':
+                shape = x.shape if self.sample_rank == 0 else x.shape[:-self.sample_rank]
+                feed_dict[op] = np.zeros(shape)
+            elif statistic == 'outer':
+                feed_dict[op] = x[..., None, :] * x[..., :, None]
+            elif statistic == 'log_det':
+                feed_dict[op] = np.log(np.linalg.det(x))
+            elif statistic == 'log':
+                feed_dict[op] = np.log(x)
+            elif statistic == 'log1m':
+                feed_dict[op] = np.log1p(- x)
+            elif statistic == 'lgamma':
+                feed_dict[op] = scipy.special.gammaln(x)
+            elif statistic == 'var':
+                feed_dict[op] = np.zeros_like(x)
+            elif statistic == 'cov':
+                feed_dict[op] = np.zeros((*x.shape, x.shape[-1]))
+            else:
+                raise KeyError("'%s' is not a recognized statistic" % statistic)
+
+        return feed_dict
+
 
 class NormalDistribution(Distribution):
     """
@@ -176,31 +239,31 @@ class NormalDistribution(Distribution):
         self._mean = as_tensor(mean)
         self._precision = as_tensor(precision)
 
-    def _statistic(self, statistic):
+    def _statistic(self, statistic, name):
         if statistic == 'entropy':
-            return 0.5 * (LOG2PIE - tf.log(self._precision))
+            return tf.multiply(0.5, LOG2PIE - tf.log(self._precision), name)
         elif statistic == 1:
             return self._mean
         elif statistic == 'var':
-            return tf.reciprocal(self._precision)
+            return tf.reciprocal(self._precision, name)
         elif statistic == 2:
-            return tf.square(self.statistic(1)) + self.statistic('var')
+            return tf.add(tf.square(self.statistic(1)), self.statistic('var'), name)
         else:
-            return super(NormalDistribution, self)._statistic(statistic)
+            return super(NormalDistribution, self)._statistic(statistic, name)
 
     @property
     def sample_rank(self):
         return 0
 
     @staticmethod
-    def log_likelihood(x, mean, precision):  # pylint: disable=W0221
+    def log_likelihood(x, mean, precision, name=None):  # pylint: disable=W0221
         chi2 = evaluate_statistic(x, 2) - 2 * evaluate_statistic(x, 1) * \
             evaluate_statistic(mean, 1) + evaluate_statistic(mean, 2)
-        return 0.5 * (evaluate_statistic(precision, 'log') - LOG2PI -
-                      evaluate_statistic(precision, 1) * chi2)
+        return tf.multiply(0.5, evaluate_statistic(precision, 'log') - LOG2PI -
+                           evaluate_statistic(precision, 1) * chi2, name)
 
     @staticmethod
-    def linear_log_likelihood(x, y, theta, tau):
+    def linear_log_likelihood(x, y, theta, tau, name=None):
         """
         Evaluate the log likelihood of the observation `y` given features `x`, coefficients `theta`,
         and noise precision `tau`.
@@ -217,9 +280,8 @@ class NormalDistribution(Distribution):
         ) + tf.reduce_sum(
             evaluate_statistic(x, 'outer') * evaluate_statistic(theta, 'outer'), axis=(-1, -2)
         )
-        ll = 0.5 * (
-            evaluate_statistic(tau, 'log') - LOG2PI - evaluate_statistic(tau, 1) * chi2
-        )
+        ll = tf.multiply(0.5, evaluate_statistic(tau, 'log') - LOG2PI -
+                         evaluate_statistic(tau, 1) * chi2, name)
         return ll
 
 
@@ -239,31 +301,31 @@ class GammaDistribution(Distribution):
         self._shape = as_tensor(shape)
         self._scale = as_tensor(scale)
 
-    def _statistic(self, statistic):
+    def _statistic(self, statistic, name):
         if statistic == 'entropy':
-            return self._shape - tf.log(self._scale) + tf.lgamma(self._shape) + \
-                (1.0 - self._shape) * tf.digamma(self._shape)
+            return tf.add(self._shape - tf.log(self._scale) + tf.lgamma(self._shape),
+                          (1.0 - self._shape) * tf.digamma(self._shape), name)
         elif statistic == 1:
-            return self._shape / self._scale
+            return tf.divide(self._shape, self._scale, name)
         elif statistic == 2:
-            return self._shape * (self._shape + 1.0) / np.square(self._scale)
+            return tf.divide(self._shape * (self._shape + 1.0), np.square(self._scale), name)
         elif statistic == 'var':
-            return self._shape / np.square(self._scale)
+            return tf.divide(self._shape, np.square(self._scale), name)
         elif statistic == 'log':
-            return tf.digamma(self._shape) - tf.log(self._scale)
+            return tf.subtract(tf.digamma(self._shape), tf.log(self._scale), name)
         else:
-            return super(GammaDistribution, self)._statistic(statistic)
+            return super(GammaDistribution, self)._statistic(statistic, name)
 
     @property
     def sample_rank(self):
         return 0
 
     @staticmethod
-    def log_likelihood(x, shape, scale):  # pylint: disable=W0221
+    def log_likelihood(x, shape, scale, name=None):  # pylint: disable=W0221
         shape_1 = evaluate_statistic(shape, 1)
-        return - evaluate_statistic(shape, 'lgamma') + shape_1 * evaluate_statistic(scale, 'log') + \
-            (shape_1 - 1.0) * evaluate_statistic(x, 'log') - evaluate_statistic(scale, 1) * \
-            evaluate_statistic(x, 1)
+        return tf.subtract(shape_1 * evaluate_statistic(scale, 'log') + (shape_1 - 1.0) *
+                           evaluate_statistic(x, 'log') - evaluate_statistic(scale, 1) *
+                           evaluate_statistic(x, 1), evaluate_statistic(shape, 'lgamma'), name)
 
 
 class CategoricalDistribution(Distribution):
@@ -276,31 +338,37 @@ class CategoricalDistribution(Distribution):
         tensor of probabilities
     """
     def __init__(self, p):
-        super(CategoricalDistribution, self).__init__(['p'])
+        super(CategoricalDistribution, self).__init__(['p'], ['cov', 'outer'])
         self._p = as_tensor(p)
 
-    def _statistic(self, statistic):
+    def _statistic(self, statistic, name):
         if statistic == 'entropy':
-            return - tf.reduce_sum(self._p * tf.log(self._p), axis=-1)
+            return - tf.reduce_sum(self._p * tf.log(self._p), axis=-1, name=name)
         elif isinstance(statistic, numbers.Real) and statistic > 0:
             return self._p
         elif statistic == 'var':
-            return self._p * (1.0 - self._p)
+            return tf.multiply(self._p, (1.0 - self._p), name)
+        elif statistic == 'cov':
+            cov = - self._p[..., None, :] * self._p[..., :, None]
+            return tf.matrix_set_diag(cov, self.statistic('var'), name)
+        elif statistic == 'outer':
+            return tf.matrix_diag(self._p, name)
         else:
-            return super(CategoricalDistribution, self)._statistic(statistic)
+            return super(CategoricalDistribution, self)._statistic(statistic, name)
 
     @property
     def sample_rank(self):
         return 1
 
     @staticmethod
-    def log_likelihood(x, p):  # pylint: disable=W0221
-        return tf.reduce_sum(evaluate_statistic(x, 1) * evaluate_statistic(p, 'log'), axis=-1)
+    def log_likelihood(x, p, name=None):  # pylint: disable=W0221
+        return tf.reduce_sum(evaluate_statistic(x, 1) * evaluate_statistic(p, 'log'), axis=-1,
+                             name=name)
 
     @staticmethod
-    def mixture_log_likelihood(z, expected_log_likelihood):
+    def mixture_log_likelihood(z, expected_log_likelihood, name=None):
         """
-        Evaluate the expected log likelihood given indicator variables `z`.
+        Evaluate the expected log likelihood of a mixture distribution given indicators `z`.
 
         Parameters
         ----------
@@ -308,10 +376,41 @@ class CategoricalDistribution(Distribution):
             indiciator variables of shape `(..., k)` where `k` is the number of mixture components
         expected_log_likelihood : tf.Tensor
             expected log likelihood given component membership of the same shape as `z`
-        reduce : bool
-            whether to aggregate the likelihood
         """
-        return tf.reduce_sum(evaluate_statistic(z, 1) * expected_log_likelihood, axis=-1)
+        return tf.reduce_sum(evaluate_statistic(z, 1) * expected_log_likelihood, axis=-1, name=name)
+
+    @staticmethod
+    def interacting_mixture_log_likelihood(z, expected_log_likelihood, name=None):
+        """
+        Evaluate the expected log likelihood of a mixture distribution with interactions given
+        indicators `z`.
+
+        Parameters
+        ----------
+        z : tf.Tensor
+            indiciator variables of shape `(n, k)`, where `n` is the number of observations and `k`
+            is the number of mixture components
+        expected_log_likelihood : tf.Tensor
+            expected log likelihood given component membership with shape `(n, n, k, k)` such that
+            the `(i, j, a, b)` element corresponds to the log likelihood term for the interaction
+            between entities `i` and `j` given that they belong to components `a` and `b`,
+            respectively.
+        """
+        # Get the mean
+        z_1 = evaluate_statistic(z, 1)
+        shape = z_1.shape
+        if len(shape) != 2:
+            raise ValueError("interacting mixtures are only supported for vectors of observations, "
+                             "i.e. the shape of the indicators must be `(num_observations, "
+                             "num_components)`")
+        # Create the product of means with shape (num_obs, num_obs, num_comps, num_comps)
+        zz = z_1[:, None, :, None] * z_1[None, :, None, :]
+        # Add covariance terms to the diagonal (wrt observations) to account for repeated indices
+        # (distinct indices are independent by assumption)
+        z_cov = evaluate_statistic(z, 'cov')
+        zz += tf.eye(shape[0].value)[..., None, None] * z_cov
+
+        return tf.reduce_sum(zz * expected_log_likelihood, axis=(-1, -2), name=name)
 
 
 class DirichletDistribution(Distribution):
@@ -327,38 +426,97 @@ class DirichletDistribution(Distribution):
         super(DirichletDistribution, self).__init__(['alpha'])
         self._alpha = as_tensor(alpha)
 
-    def _statistic(self, statistic):
+    def _statistic(self, statistic, name):
         if statistic == '_alpha_total':
-            return tf.reduce_sum(self._alpha, -1, True)
+            return tf.reduce_sum(self._alpha, -1, True, name=name)
         elif statistic == '_alpha_totalm1':
-            return tf.reduce_sum(self._alpha - 1.0, -1, True)
+            return tf.reduce_sum(self._alpha - 1.0, -1, True, name=name)
         elif statistic == 1:
-            return tf.divide(self._alpha, self.statistic('_alpha_total'), 'mean')
+            return tf.divide(self._alpha, self.statistic('_alpha_total'), name)
         elif statistic == 2:
-            return tf.square(self.statistic(1)) + self.statistic('var')
+            return tf.add(tf.square(self.statistic(1)), self.statistic('var'), name)
         elif statistic == 'var':
             _alpha_total = self.statistic('_alpha_total')
-            return self._alpha * (_alpha_total - self._alpha) / \
-                (tf.square(_alpha_total) * (_alpha_total + 1.0))
+            return tf.divide(self._alpha * (_alpha_total - self._alpha),
+                             tf.square(_alpha_total) * (_alpha_total + 1.0), name)
+        elif statistic == 'log':
+            return tf.subtract(tf.digamma(self._alpha), tf.digamma(self.statistic('_alpha_total')),
+                               name)
         elif statistic == '_log_normalization':
-            return tf.reduce_sum(tf.lgamma(self._alpha), -1) - \
-                tf.lgamma(self.statistic('_alpha_total')[..., 0])
+            return tf.subtract(tf.reduce_sum(tf.lgamma(self._alpha), -1),
+                               tf.lgamma(self.statistic('_alpha_total')[..., 0]), name)
         elif statistic == 'entropy':
-            return self.statistic('_log_normalization') + self.statistic('_alpha_totalm1')[..., 0] * \
-                tf.digamma(self.statistic('_alpha_total')[..., 0]) - \
-                tf.reduce_sum((self._alpha - 1.0) * tf.digamma(self._alpha), -1)
+            return tf.add(self.statistic('_log_normalization'),
+                          self.statistic('_alpha_totalm1')[..., 0] *
+                          tf.digamma(self.statistic('_alpha_total')[..., 0]) -
+                          tf.reduce_sum((self._alpha - 1.0) * tf.digamma(self._alpha), -1), name)
         else:
-            return super(DirichletDistribution, self)._statistic(statistic)
+            return super(DirichletDistribution, self)._statistic(statistic, name)
 
     @property
     def sample_rank(self):
         return 1
 
     @staticmethod
-    def log_likelihood(x, alpha):  # pylint: disable=W0221
+    def log_likelihood(x, alpha, name=None):  # pylint: disable=W0221
         assert_constant(alpha)
-        return tf.reduce_sum((alpha - 1.0) * evaluate_statistic(x, 'log'), axis=-1) - \
-            tf.reduce_sum(tf.lgamma(alpha), -1) + tf.lgamma(tf.reduce_sum(alpha, -1))
+        return tf.add(tf.reduce_sum((alpha - 1.0) * evaluate_statistic(x, 'log'), axis=-1) -
+                      tf.reduce_sum(tf.lgamma(alpha), -1), tf.lgamma(tf.reduce_sum(alpha, -1)),
+                      name)
+
+
+class BetaDistribution(Distribution):
+    """
+    Beta distribution.
+
+    Parameters
+    ----------
+    a : tf.Tensor
+        first shape parameter
+    b : tf.Tensor
+        second shape parameter
+    """
+    def __init__(self, a, b):
+        super(BetaDistribution, self).__init__(['a', 'b'])
+        self._a = as_tensor(a)
+        self._b = as_tensor(b)
+
+    def _statistic(self, statistic, name):
+        if statistic == 1:
+            return tf.divide(self._a, self.statistic('_total'), name)
+        elif statistic == 2:
+            _total = self.statistic('_total')
+            return tf.divide(self._a * (self._a + 1.0), (_total + 1.0) * _total, name)
+        elif statistic == 'var':
+            _total = self.statistic('_total')
+            return tf.divide(self._a * self._b, tf.square(_total) * (_total + 1.0), name)
+        elif statistic == 'log':
+            return tf.subtract(tf.digamma(self._a), tf.digamma(self.statistic('_total')), name)
+        elif statistic == 'log1m':
+            return tf.subtract(tf.digamma(self._b), tf.digamma(self.statistic('_total')), name)
+        elif statistic == '_total':
+            return tf.add(self._a, self._b, name)
+        elif statistic == 'entropy':
+            _total = self.statistic('_total')
+            return tf.add(tf.lgamma(self._a), tf.lgamma(self._b) - tf.lgamma(_total) +
+                          (1.0 - self._a) * tf.digamma(self._a) + (1.0 - self._b) *
+                          tf.digamma(self._b) + (_total - 2.0) * tf.digamma(_total), name)
+        else:
+            return super(BetaDistribution, self)._statistic(statistic, name)
+
+    @property
+    def sample_rank(self):
+        return 0
+
+    @staticmethod
+    def log_likelihood(x, a, b, name=None):  # pylint: disable=W0221
+        assert_constant(a)
+        assert_constant(b)
+
+        x_log = evaluate_statistic(x, 'log')
+        x_log1m = evaluate_statistic(x, 'log1m')
+        return tf.add((a - 1.0) * x_log + (b - 1.0) * x_log1m,
+                      tf.lgamma(a + b) - tf.lgamma(a) - tf.lgamma(b), name)
 
 
 class MultiNormalDistribution(Distribution):
@@ -377,32 +535,34 @@ class MultiNormalDistribution(Distribution):
         self._mean = as_tensor(mean)
         self._precision = as_tensor(precision)
 
-    def _statistic(self, statistic):
+    def _statistic(self, statistic, name):
         if statistic == 1:
             return self._mean
         elif statistic == 2:
-            return tf.square(self._mean) + self.statistic('var')
+            return tf.add(tf.square(self._mean), self.statistic('var'), name)
         elif statistic == 'cov':
-            return tf.matrix_inverse(self._precision)
+            return tf.matrix_inverse(self._precision, name=name)
         elif statistic == 'var':
-            return tf.matrix_diag_part(self.statistic('cov'))
+            return tf.matrix_diag_part(self.statistic('cov'), name)
         elif statistic == 'outer':
-            return self._mean[..., None, :] * self._mean[..., :, None] + self.statistic('cov')
+            return tf.add(self._mean[..., None, :] * self._mean[..., :, None],
+                          self.statistic('cov'), name)
         elif statistic == 'entropy':
-            return 0.5 * (LOG2PIE * self.statistic('_ndim') - self.statistic('_log_det_precision'))
+            return tf.multiply(0.5, LOG2PIE * self.statistic('_ndim') -
+                               self.statistic('_log_det_precision'), name)
         elif statistic == '_ndim':
-            return tf.to_float(self.sample_shape[-1])
+            return tf.to_float(self.sample_shape[-1], name)
         elif statistic == '_log_det_precision':
-            return tf.log(tf.matrix_determinant(self._precision))
+            return tf.log(tf.matrix_determinant(self._precision), name)
         else:
-            return super(MultiNormalDistribution, self)._statistic(statistic)
+            return super(MultiNormalDistribution, self)._statistic(statistic, name)
 
     @property
     def sample_rank(self):
         return 1
 
     @staticmethod
-    def log_likelihood(x, mean, precision):  # pylint: disable=W0221
+    def log_likelihood(x, mean, precision, name=None):  # pylint: disable=W0221
         x_1 = evaluate_statistic(x, 1)
         mean_1 = evaluate_statistic(mean, 1)
         arg = evaluate_statistic(x, 'outer') + evaluate_statistic(mean, 'outer') - \
@@ -411,9 +571,9 @@ class MultiNormalDistribution(Distribution):
 
         ndim = tf.to_float(tf.shape(mean_1)[-1])
 
-        return - 0.5 * ndim * LOG2PI + \
-            0.5 * evaluate_statistic(precision, 'log_det') - \
-            0.5 * tf.reduce_sum(evaluate_statistic(precision, 1) * arg, axis=(-1, -2))
+        return tf.multiply(0.5, - ndim * LOG2PI + evaluate_statistic(precision, 'log_det') -
+                           tf.reduce_sum(evaluate_statistic(precision, 1) * arg, axis=(-1, -2)),
+                           name)
 
 
 class WishartDistribution(Distribution):
@@ -439,38 +599,39 @@ class WishartDistribution(Distribution):
         self._shape = as_tensor(shape)
         self._scale = as_tensor(scale)
 
-    def _statistic(self, statistic):
+    def _statistic(self, statistic, name):
         if statistic == 1:
-            return self._shape[..., None, None] * self.statistic('_inv_scale')
+            return tf.multiply(self._shape[..., None, None], self.statistic('_inv_scale'), name)
         elif statistic == '_inv_scale':
-            return tf.matrix_inverse(self._scale)
+            return tf.matrix_inverse(self._scale, name=name)
         elif statistic == 'var':
             inv_scale = self.statistic('_inv_scale')
             diag = tf.matrix_diag_part(inv_scale)
-            return self._shape * (tf.square(inv_scale) + diag[..., None, :] * diag[..., :, None])
+            return tf.multiply(self._shape, tf.square(inv_scale) + diag[..., None, :] *
+                               diag[..., :, None], name)
         elif statistic == 2:
-            return tf.square(self.statistic(1)) + self.statistic('var')
+            return tf.add(tf.square(self.statistic(1)), self.statistic('var'), name)
         elif statistic == '_ndim':
-            return tf.to_float(self.sample_shape[-1])
+            return tf.to_float(self.sample_shape[-1], name)
         elif statistic == 'log_det':
             p = self.statistic('_ndim')
-            return multidigamma(0.5 * self._shape, p) + p * LOG2 - \
-                tf.log(tf.matrix_determinant(self._scale))
+            return tf.subtract(multidigamma(0.5 * self._shape, p) + p * LOG2,
+                               tf.log(tf.matrix_determinant(self._scale)), name)
         elif statistic == 'entropy':
             p = self.statistic('_ndim')
-            return -0.5 * (p + 1.0) * tf.log(tf.matrix_determinant(self._scale)) + \
-                0.5 * p * (p + 1.0) * LOG2 + lmultigamma(0.5 * self._shape, p) - \
-                0.5 * (self._shape - p - 1.0) * multidigamma(0.5 * self._shape, p) + \
-                0.5 * self._shape * p
+            return tf.subtract(0.5 * p * (p + 1.0) * LOG2 + lmultigamma(0.5 * self._shape, p) -
+                               0.5 * (self._shape - p - 1.0) * multidigamma(0.5 * self._shape, p) +
+                               0.5 * self._shape * p, 0.5 * (p + 1.0) *
+                               tf.log(tf.matrix_determinant(self._scale)), name)
         else:
-            return super(WishartDistribution, self)._statistic(statistic)
+            return super(WishartDistribution, self)._statistic(statistic, name)
 
     @property
     def sample_rank(self):
         return 2
 
     @staticmethod
-    def log_likelihood(x, shape, scale):  # pylint: disable=W0221
+    def log_likelihood(x, shape, scale, name=None):  # pylint: disable=W0221
         assert_constant(shape)
         x_logdet = evaluate_statistic(x, 'log_det')
         x_1 = evaluate_statistic(x, 1)
@@ -478,7 +639,7 @@ class WishartDistribution(Distribution):
         scale_1 = evaluate_statistic(scale, 1)
         p = tf.to_float(tf.shape(scale_1)[-1])
 
-        return 0.5 * x_logdet * (shape_1 - p - 1.0) - \
-            0.5 * tf.reduce_sum(scale_1 * x_1, axis=(-1, -2)) - \
-            0.5 * shape_1 * p * LOG2 - lmultigamma(0.5 * shape, p) + \
-            0.5 * shape_1 * evaluate_statistic(scale, 'log_det')
+        return tf.add(0.5 * x_logdet * (shape_1 - p - 1.0) - 0.5 *
+                      tf.reduce_sum(scale_1 * x_1, axis=(-1, -2)) - 0.5 * shape_1 * p * LOG2 -
+                      lmultigamma(0.5 * shape, p), 0.5 * shape_1 *
+                      evaluate_statistic(scale, 'log_det'), name)

@@ -30,3 +30,8 @@ def test_optimize(model):
     mu = model["mu"]
     mean, std = model.run([mu.mean, mu.std])
     assert np.abs(mean / std) < 3, "expected 0 but got %s +- %s" % (mean, std)
+
+
+def test_run(model):
+    elbo = model.run(model.elbo, {model['mu']: 0.0})
+    assert np.isfinite(elbo), "ELBO is not finite using a `feed_dict` containing distributions"
