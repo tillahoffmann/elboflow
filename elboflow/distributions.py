@@ -298,6 +298,8 @@ class CategoricalDistribution(Distribution):
         elif statistic == 'cov':
             cov = - self._p[..., None, :] * self._p[..., :, None]
             return tf.matrix_set_diag(cov, self.statistic('var'), name)
+        elif statistic == 'outer':
+            return tf.matrix_diag(self._p, name)
         else:
             return super(CategoricalDistribution, self)._statistic(statistic, name)
 
