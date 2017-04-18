@@ -107,6 +107,10 @@ def test_log_proba(session, distribution_pair):
         " %s" % (ef_dist.to_str(session), desired, actual)
     )
 
+    # Make sure we can also evaluate the log proba if `x` is a distribution
+    value = session.run(ef_dist.log_proba(ef_dist))
+    assert np.isfinite(value), "log probability is not finite for '%s'" % ef_dist.to_str(session)
+
 
 def test_normal_linear_log_likelihood(session):
     # Generate some data

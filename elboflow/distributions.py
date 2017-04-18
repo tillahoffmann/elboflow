@@ -378,6 +378,8 @@ class DirichletDistribution(Distribution):
             _alpha_total = self.statistic('_alpha_total')
             return self._alpha * (_alpha_total - self._alpha) / \
                 (tf.square(_alpha_total) * (_alpha_total + 1.0))
+        elif statistic == 'log':
+            return tf.digamma(self._alpha) - tf.digamma(self.statistic('_alpha_total'))
         elif statistic == '_log_normalization':
             return tf.reduce_sum(tf.lgamma(self._alpha), -1) - \
                 tf.lgamma(self.statistic('_alpha_total')[..., 0])
@@ -424,6 +426,10 @@ class BetaDistribution(Distribution):
         elif statistic == 'var':
             _total = self.statistic('_total')
             return self._a * self._b / (tf.square(_total) * (_total + 1.0))
+        elif statistic == 'log':
+            return tf.digamma(self._a) - tf.digamma(self.statistic('_total'))
+        elif statistic == 'log1mx':
+            return tf.digamma(self._b) - tf.digamma(self.statistic('_total'))
         elif statistic == '_total':
             return self._a + self._b
         elif statistic == 'entropy':
