@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 
 from .display import *
+from .util import *
 
 
 class Model:
@@ -105,8 +106,17 @@ class Model:
         return {key: np.asarray(value) for key, value in trace.items()}
 
     @ft.wraps(tf.Session.run)
-    def run(self, *args, **kwargs):
-        return self.session.run(*args, **kwargs)
+    def run(self, fetches, feed_dict=None, options=None, run_metadata=None):
+        original = feed_dict or {}
+        feed_dict = {}
+        for key, value in original.items():
+            # Get all the statistics of this distribution
+            if isinstance(key, BaseDistribution):
+                feed_dict.update(key.feed_dict(value))
+            # Just forward the feed values transparently
+            else:
+                feed_dict[key] = value
+        return self.session.run(fetches, feed_dict, options, run_metadata)
 
     def __getitem__(self, key):
         return self.factors[key]

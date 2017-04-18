@@ -1,10 +1,11 @@
 import numbers
+import scipy.special
 import tensorflow as tf
 
 from .util import *
 
 
-def evaluate_statistic(x, statistic, name=None):
+def evaluate_statistic(x, statistic, name=None, sample_rank=None):
     """
     Evaluate statistic of a value or distribution.
 
@@ -14,15 +15,24 @@ def evaluate_statistic(x, statistic, name=None):
         value or distribution
     statistic : int, str or callable
         statistic to evaluate
+    name : str or None
+        name for the resulting operation
+    sample_rank : int
+        rank of the distribution from which the values were drawn (only necessary for some
+        statistics)
     """
     if isinstance(x, Distribution):
         return x.statistic(statistic)
 
     x = as_tensor(x)
-    if isinstance(statistic, numbers.Number):
+    if isinstance(statistic, numbers.Real):
         return tf.pow(x, statistic, name)
     elif statistic == 'entropy':
-        return tf.constant(0.0, name)
+        assert sample_rank is not None, "`sample_rank` must be provided to calculate the entropy"
+        shape = tf.shape(x)
+        if sample_rank > 0:
+            shape = shape[:-sample_rank]
+        return tf.zeros(shape)
     elif statistic == 'outer':
         return tf.multiply(x[..., None, :], x[..., :, None], name)
     elif statistic == 'log_det':
@@ -33,6 +43,12 @@ def evaluate_statistic(x, statistic, name=None):
         return tf.log(1.0 - x, name)
     elif statistic == 'lgamma':
         return tf.lgamma(x, name)
+    elif statistic == 'var':
+        return tf.zeros_like(x)
+    elif statistic == 'cov':
+        shape = tf.shape(x)
+        shape = tf.concat([shape, shape[-1:]], 0)
+        return tf.zeros(shape, x.dtype)
     else:
         raise KeyError("'%s' is not a recognized statistic" % statistic)
 
@@ -168,6 +184,43 @@ class Distribution(BaseDistribution):
     def shape(self):
         """tf.Tensor : shape of batches and samples"""
         return tf.shape(self.mean)
+
+    def feed_dict(self, x):
+        """
+        Construct a feed dictionary that replaces all statistics of the distribution as if it was
+        a delta distribution at `value`.
+        """
+        # Build a feed dictionary (this mirrors `evaluate_statistic` but must use numpy functions
+        # rather than tensorflow functions)
+        feed_dict = {}
+        x = np.asarray(x)
+        for statistic, op in self._statistics.items():
+            # Skip "private" statistics starting with an underscore
+            if isinstance(statistic, str) and statistic.startswith('_'):
+                continue
+            elif isinstance(statistic, numbers.Real):
+                feed_dict[op] = x ** statistic
+            elif statistic == 'entropy':
+                shape = x.shape if self.sample_rank == 0 else x.shape[:-self.sample_rank]
+                feed_dict[op] = np.zeros(shape)
+            elif statistic == 'outer':
+                feed_dict[op] = x[..., None, :] * x[..., :, None]
+            elif statistic == 'log_det':
+                feed_dict[op] = np.log(np.linalg.det(x))
+            elif statistic == 'log':
+                feed_dict[op] = np.log(x)
+            elif statistic == 'log1m':
+                feed_dict[op] = np.log(1.0 - x)
+            elif statistic == 'lgamma':
+                feed_dict[op] = scipy.special.gammaln(x)
+            elif statistic == 'var':
+                feed_dict[op] = np.zeros_like(x)
+            elif statistic == 'cov':
+                feed_dict[op] = np.zeros((*x.shape, x.shape[-1]))
+            else:
+                raise KeyError("'%s' is not a recognized statistic" % statistic)
+
+        return feed_dict
 
 
 class NormalDistribution(Distribution):
