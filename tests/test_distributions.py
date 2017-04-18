@@ -59,6 +59,8 @@ def evaluate_scipy_statistic(dist, statistic):
     [(ef.MultiNormalDistribution(mean, precision),
       scipy.stats.multivariate_normal(mean, np.linalg.inv(precision))) for mean, precision
      in [(np.zeros(2), np.eye(2)), ([-3, 2], [[4, -1], [-1, 2]])]],
+    [(ef.BetaDistribution(a, b), scipy.stats.beta(a, b)) for a, b in
+     np.random.gamma(1, size=(3, 2))]
 ))
 def distribution_pair(request):
     return request.param

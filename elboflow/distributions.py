@@ -29,6 +29,8 @@ def evaluate_statistic(x, statistic):
         return tf.log(tf.matrix_determinant(x))
     elif statistic == 'log':
         return tf.log(x)
+    elif statistic == 'log1mx':
+        return tf.log(1.0 - x)
     elif statistic == 'lgamma':
         return tf.lgamma(x)
     else:
@@ -54,7 +56,9 @@ class Distribution(BaseDistribution):
     def _statistic(self, statistic):
         if statistic == 'outer':
             mean = self.statistic(1)
-            return mean[..., :, None] * mean[..., None, :] + tf.diag(self.statistic('var'))
+            return mean[..., :, None] * mean[..., None, :] + self.statistic('cov')
+        elif statistic == 'cov':
+            return tf.diag(self.statistic('var'))
         elif statistic == 'std':
             return tf.sqrt(self.statistic('var'))
         else:
@@ -276,7 +280,7 @@ class CategoricalDistribution(Distribution):
         tensor of probabilities
     """
     def __init__(self, p):
-        super(CategoricalDistribution, self).__init__(['p'])
+        super(CategoricalDistribution, self).__init__(['p'], ['cov', 'outer'])
         self._p = as_tensor(p)
 
     def _statistic(self, statistic):
@@ -286,6 +290,9 @@ class CategoricalDistribution(Distribution):
             return self._p
         elif statistic == 'var':
             return self._p * (1.0 - self._p)
+        elif statistic == 'cov':
+            cov = - self._p[..., None, :] * self._p[..., :, None]
+            return tf.matrix_set_diag(cov, self.statistic('var'))
         else:
             return super(CategoricalDistribution, self)._statistic(statistic)
 
@@ -300,7 +307,7 @@ class CategoricalDistribution(Distribution):
     @staticmethod
     def mixture_log_likelihood(z, expected_log_likelihood):
         """
-        Evaluate the expected log likelihood given indicator variables `z`.
+        Evaluate the expected log likelihood of a mixture distribution given indicators `z`.
 
         Parameters
         ----------
@@ -312,6 +319,37 @@ class CategoricalDistribution(Distribution):
             whether to aggregate the likelihood
         """
         return tf.reduce_sum(evaluate_statistic(z, 1) * expected_log_likelihood, axis=-1)
+
+    @staticmethod
+    def interacting_mixture_log_likelihood(z, expected_log_likelihood):
+        """
+        Evaluate the expected log likelihood of a mixture distribution with interactions given
+        indicators `z`.
+
+        Parameters
+        ----------
+        z : tf.Tensor
+            indiciator variables of shape `(..., k)` where `k` is the number of mixture components
+        expected_log_likelihood : tf.Tensor
+            expected log likelihood given component membership of the same shape as `z`
+        reduce : bool
+            whether to aggregate the likelihood
+        """
+        # Get the mean
+        z_1 = evaluate_statistic(z, 1)
+        shape = z_1.shape
+        if len(shape) != 2:
+            raise ValueError("interacting mixtures are only supported for vectors of observations, "
+                             "i.e. the shape of the indicators must be `(num_observations, "
+                             "num_components)`")
+        # Create the product of means with shape (num_obs, num_obs, num_comps, num_comps)
+        zz = z_1[:, None, :, None] * z_1[None, :, None, :]
+        # Add covariance terms to the diagonal (wrt observations) to account for repeated indices
+        # (distinct indices are independent by assumption)
+        z_cov = evaluate_statistic(z, 'cov')
+        zz += tf.eye(shape[0].value)[..., None, None] * z_cov
+
+        return tf.reduce_sum(zz * expected_log_likelihood, axis=(-1, -2))
 
 
 class DirichletDistribution(Distribution):
@@ -359,6 +397,56 @@ class DirichletDistribution(Distribution):
         assert_constant(alpha)
         return tf.reduce_sum((alpha - 1.0) * evaluate_statistic(x, 'log'), axis=-1) - \
             tf.reduce_sum(tf.lgamma(alpha), -1) + tf.lgamma(tf.reduce_sum(alpha, -1))
+
+
+class BetaDistribution(Distribution):
+    """
+    Beta distribution.
+
+    Parameters
+    ----------
+    a : tf.Tensor
+        first shape parameter
+    b : tf.Tensor
+        second shape parameter
+    """
+    def __init__(self, a, b):
+        super(BetaDistribution, self).__init__(['a', 'b'])
+        self._a = as_tensor(a)
+        self._b = as_tensor(b)
+
+    def _statistic(self, statistic):
+        if statistic == 1:
+            return self._a / self.statistic('_total')
+        elif statistic == 2:
+            _total = self.statistic('_total')
+            return self._a * (self._a + 1.0) / ((_total + 1.0) * _total)
+        elif statistic == 'var':
+            _total = self.statistic('_total')
+            return self._a * self._b / (tf.square(_total) * (_total + 1.0))
+        elif statistic == '_total':
+            return self._a + self._b
+        elif statistic == 'entropy':
+            _total = self.statistic('_total')
+            return tf.lgamma(self._a) + tf.lgamma(self._b) - tf.lgamma(_total) + \
+                (1.0 - self._a) * tf.digamma(self._a) + (1.0 - self._b) * tf.digamma(self._b) + \
+                (_total - 2.0) * tf.digamma(_total)
+        else:
+            return super(BetaDistribution, self)._statistic(statistic)
+
+    @property
+    def sample_rank(self):
+        return 0
+
+    @staticmethod
+    def log_likelihood(x, a, b):  # pylint: disable=W0221
+        assert_constant(a)
+        assert_constant(b)
+
+        x_log = evaluate_statistic(x, 'log')
+        x_log1m = evaluate_statistic(x, 'log1mx')
+        return (a - 1.0) * x_log + (b - 1.0) * x_log1m + \
+            tf.lgamma(a + b) - tf.lgamma(a) - tf.lgamma(b)
 
 
 class MultiNormalDistribution(Distribution):
