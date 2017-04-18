@@ -29,7 +29,7 @@ def evaluate_statistic(x, statistic):
         return tf.log(tf.matrix_determinant(x))
     elif statistic == 'log':
         return tf.log(x)
-    elif statistic == 'log1mx':
+    elif statistic == 'log1m':
         return tf.log(1.0 - x)
     elif statistic == 'lgamma':
         return tf.lgamma(x)
@@ -315,8 +315,6 @@ class CategoricalDistribution(Distribution):
             indiciator variables of shape `(..., k)` where `k` is the number of mixture components
         expected_log_likelihood : tf.Tensor
             expected log likelihood given component membership of the same shape as `z`
-        reduce : bool
-            whether to aggregate the likelihood
         """
         return tf.reduce_sum(evaluate_statistic(z, 1) * expected_log_likelihood, axis=-1)
 
@@ -329,11 +327,13 @@ class CategoricalDistribution(Distribution):
         Parameters
         ----------
         z : tf.Tensor
-            indiciator variables of shape `(..., k)` where `k` is the number of mixture components
+            indiciator variables of shape `(n, k)`, where `n` is the number of observations and `k`
+            is the number of mixture components
         expected_log_likelihood : tf.Tensor
-            expected log likelihood given component membership of the same shape as `z`
-        reduce : bool
-            whether to aggregate the likelihood
+            expected log likelihood given component membership with shape `(n, n, k, k)` such that
+            the `(i, j, a, b)` element corresponds to the log likelihood term for the interaction
+            between entities `i` and `j` given that they belong to components `a` and `b`,
+            respectively.
         """
         # Get the mean
         z_1 = evaluate_statistic(z, 1)
@@ -428,7 +428,7 @@ class BetaDistribution(Distribution):
             return self._a * self._b / (tf.square(_total) * (_total + 1.0))
         elif statistic == 'log':
             return tf.digamma(self._a) - tf.digamma(self.statistic('_total'))
-        elif statistic == 'log1mx':
+        elif statistic == 'log1m':
             return tf.digamma(self._b) - tf.digamma(self.statistic('_total'))
         elif statistic == '_total':
             return self._a + self._b
@@ -450,7 +450,7 @@ class BetaDistribution(Distribution):
         assert_constant(b)
 
         x_log = evaluate_statistic(x, 'log')
-        x_log1m = evaluate_statistic(x, 'log1mx')
+        x_log1m = evaluate_statistic(x, 'log1m')
         return (a - 1.0) * x_log + (b - 1.0) * x_log1m + \
             tf.lgamma(a + b) - tf.lgamma(a) - tf.lgamma(b)
 
