@@ -72,7 +72,11 @@ def test_statistic(session, distribution_pair):
 
     for statistic in ef_dist.supported_statistics:
         actual = session.run(ef.evaluate_statistic(ef_dist, statistic))
-        desired = evaluate_scipy_statistic(scipy_dist, statistic)
+        with ef.capture_stdstream('stderr') as stderr:
+            desired = evaluate_scipy_statistic(scipy_dist, statistic)
+
+        if 'algorithm does not converge' in stderr.value:
+            pytest.skip(stderr.value)
 
         # Demand 3-sigma consistency if the statistic is sampled
         err_msg = "inconsistent statistic '%s' for `%s`: expected %%s but got %s" % \
@@ -103,8 +107,8 @@ def test_log_proba(session, distribution_pair):
     else:
         raise NotImplementedError("%s does not support 'log*'" % scipy_dist)
     np.testing.assert_allclose(
-        actual, desired, 1e-5, err_msg="inconsistent log probability for '%s': expected %s but got "
-        " %s" % (ef_dist.to_str(session), desired, actual)
+        actual, desired, 1e-5, err_msg="inconsistent log probability for '%s' at %s: expected %s "
+        "but got %s" % (ef_dist.to_str(session), ef_x, desired, actual)
     )
 
     # Make sure we can also evaluate the log proba if `x` is a distribution

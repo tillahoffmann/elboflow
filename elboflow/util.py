@@ -1,4 +1,6 @@
 import functools as ft
+import sys
+import io
 import numpy as np
 import tensorflow as tf
 
@@ -135,3 +137,42 @@ def add_bias(x):
     Add a bias feature to a design matrix.
     """
     return np.hstack([np.ones((x.shape[0], 1)), x])
+
+
+class capture_stdstream:
+    """
+    Capture a std stream such as stdout or stderr.
+
+    Parameters
+    ----------
+    stream : str
+        name of the stream to capture.
+    forward : bool
+        whether to forward the content to the original stream.
+    """
+    def __init__(self, stream, forward=True):
+        self._stream = stream
+        self._str_stream = io.StringIO()
+        self._sys_stream = None
+        self._forward = forward
+
+    def __enter__(self):
+        self._sys_stream = getattr(sys, self._stream)
+        setattr(sys, self._stream, self)
+        return self
+
+    def __exit__(self, *args):
+        setattr(sys, self._stream, self._sys_stream)
+        self._sys_stream = None
+
+    def write(self, *args, **kwargs):
+        self._str_stream.write(*args, **kwargs)
+        if self._forward and self._sys_stream:
+            self._sys_stream.write(*args, **kwargs)
+
+    @property
+    def value(self):
+        """
+        str : content written to the std stream.
+        """
+        return self._str_stream.getvalue()
