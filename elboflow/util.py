@@ -15,11 +15,11 @@ class BaseDistribution:
     pass
 
 
-def as_tensor(x, dtype=None):
-    """Convert `x` to a tensor or distribution."""
+@ft.wraps(tf.convert_to_tensor)
+def as_tensor(x, dtype=None, name=None):
     if isinstance(x, BaseDistribution):
         return x
-    return tf.convert_to_tensor(x, dtype or FLOATX)
+    return tf.convert_to_tensor(x, dtype or FLOATX, name)
 
 
 def assert_constant(x):
@@ -95,7 +95,7 @@ def get_normalized_variable(name, shape=None, dtype=None, initializer=None, regu
     return transform(x)
 
 
-def multidigamma(x, p):
+def multidigamma(x, p, name=None):
     """
     Compute the multivariate digamma function recursively.
 
@@ -104,10 +104,11 @@ def multidigamma(x, p):
     https://en.wikipedia.org/wiki/Multivariate_gamma_function#Derivatives
     """
     x = as_tensor(x)
-    return tf.reduce_sum(tf.digamma(x[..., None] - 0.5 * tf.range(p, dtype=x.dtype)), axis=-1)
+    return tf.reduce_sum(tf.digamma(x[..., None] - 0.5 * tf.range(p, dtype=x.dtype)), axis=-1,
+                         name=name)
 
 
-def lmultigamma(x, p):
+def lmultigamma(x, p, name=None):
     """
     Compute the natural logarithm of the multivariate gamma function recursively.
 
@@ -116,8 +117,10 @@ def lmultigamma(x, p):
     https://en.wikipedia.org/wiki/Multivariate_gamma_function
     """
     x = as_tensor(x)
-    return 0.25 * p * (p - 1.0) * LOGPI + \
-        tf.reduce_sum(tf.lgamma(x[..., None] - 0.5 * tf.range(p, dtype=x.dtype)), axis=-1)
+    _dims = tf.range(p, dtype=x.dtype)
+    p = as_tensor(p)
+    return tf.add(0.25 * p * (p - 1.0) * LOGPI,
+                  tf.reduce_sum(tf.lgamma(x[..., None] - 0.5 * _dims), axis=-1), name=name)
 
 
 def minmax(x, axis=None):
