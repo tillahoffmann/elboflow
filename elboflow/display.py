@@ -25,6 +25,8 @@ def evaluate_proba(session, distribution, start=None, stop=None, num=50, scale=3
         number of standard deviations to evaluate the PDF over. Ignored if `start` and `stop` are
         given.
     """
+    assert distribution.sample_rank == 0, "only scalar distributions are supported"
+
     # Evaluate the limits
     if start is None or stop is None:
         mean, std = session.run([distribution.mean, distribution.std])
@@ -32,12 +34,14 @@ def evaluate_proba(session, distribution, start=None, stop=None, num=50, scale=3
         stop = mean + scale * std if stop is None else stop
 
     # Evaluate the probability density function
-    lin = start + np.linspace(0, 1, num)[:, None] * (stop - start)
+    shape = [num, *np.ones_like(session.run(distribution.shape))]
+    lin = np.reshape(np.linspace(0, 1, num), shape)
+    lin = start + lin * (stop - start)
     return lin, np.exp(session.run(distribution.log_proba(lin)))
 
 
-def plot_proba(session, distribution, start=None, stop=None, num=50, scale=3, reference=None, ax=None,
-             **kwargs):
+def plot_proba(session, distribution, start=None, stop=None, num=50, scale=3, reference=None,
+               ax=None, **kwargs):
     """
     Plot the probability density function of a (multivariate) distribution.
 
@@ -66,7 +70,8 @@ def plot_proba(session, distribution, start=None, stop=None, num=50, scale=3, re
     # Plot the PDF
     ax = ax or plt.gca()
     lin, pdf = evaluate_proba(session, distribution, start, stop, num, scale)
-    lines = ax.plot(lin, pdf, **kwargs)
+    shape = (lin.shape[0], -1)
+    lines = ax.plot(np.reshape(lin, shape), np.reshape(pdf, shape), **kwargs)
 
     # Plot the reference values if given
     if reference is not None:
