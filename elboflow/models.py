@@ -25,13 +25,15 @@ class Model:
     """
     def __init__(self, evaluate_log_joint=None, args=None, create_optimizer=None,
                  create_session=None):
-        self.create_optimizer = create_optimizer or ft.partial(tf.train.AdamOptimizer, 0.1)
-        self.create_session = create_session or tf.Session
-        self._evaluate_log_joint = evaluate_log_joint
+        if create_optimizer is not None:
+            self.create_optimizer = create_optimizer
+        if create_session is not None:
+            self.create_session = create_session
+        if evaluate_log_joint is not None:
+            self.evaluate_log_joint = evaluate_log_joint
         self.args = args
 
         with tf.Graph().as_default() as self.graph:
-            self.optimizer = self.create_optimizer()
             self.log_joint, self.factors = self.evaluate_log_joint(*self.args)
             # Evaluate the entropies
             self.entropies = {key: value.entropy for key, value in self.factors.items()}
@@ -40,11 +42,25 @@ class Model:
                 sum([tf.reduce_sum(entropy) for entropy in self.entropies.values()])
             # Define a loss
             self.loss = - self.elbo
-            self.train_op = self.optimizer.minimize(self.loss)
+            self.global_step = tf.Variable(0, name='global_step', trainable=False)
+            self.optimizer = self.create_optimizer()
+            self.train_op = self.optimizer.minimize(self.loss, global_step=self.global_step)
             self.session = self.create_session()
             self.session.run(tf.global_variables_initializer())
 
-    def evaluate_log_joint(self, *args):
+    def create_optimizer(self):  # pylint: disable=E0202
+        """
+        Create a tensorflow optimizer.
+        """
+        return tf.train.AdamOptimizer(0.1)
+
+    def create_session(self):  # pylint: disable=E0202
+        """
+        Create a tensorflow session.
+        """
+        return tf.Session()
+
+    def evaluate_log_joint(self, *args):  # pylint: disable=E0202
         """
         Evaluate the expected value of the log joint distribution.
 
@@ -55,10 +71,7 @@ class Model:
         factors : dict[str, Distribution]
             dictionary of factors of the approximate posterior keyed by name.
         """
-        if self._evaluate_log_joint:
-            return self._evaluate_log_joint(*args)
-        else:
-            raise NotImplementedError
+        raise NotImplementedError
 
     def optimize(self, steps, fetches=None, break_on_interrupt=True, tqdm=None):
         """

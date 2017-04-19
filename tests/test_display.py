@@ -12,6 +12,9 @@ def distribution(request):
                                           np.diag(np.random.gamma(1, size=request.param)))
 
 def test_plot_proba(session, distribution):
+    # TODO: include univariate distributions with non-empty batch shape
+    if distribution.sample_rank != 0:
+        pytest.skip("plot_proba is only supported for scalar distributions")
     ef.plot_proba(session, distribution)
 
 
