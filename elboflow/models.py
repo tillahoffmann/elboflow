@@ -13,33 +13,34 @@ class Model:
 
     Parameters
     ----------
-    evaluate_log_joint : callable
+    setup : callable
         function to evaluate the expected log joint distribution and the factors approximating the
         posterior.
     args : list
-        arguments passed to `evaluate_log_joint`
+        arguments passed to `setup`
     create_optimizer : callable
         function to create an optimizer.
     create_session : callable
         function to create a session.
     """
-    def __init__(self, evaluate_log_joint=None, args=None, create_optimizer=None,
+    def __init__(self, setup=None, args=None, create_optimizer=None,
                  create_session=None):
         if create_optimizer is not None:
             self.create_optimizer = create_optimizer
         if create_session is not None:
             self.create_session = create_session
-        if evaluate_log_joint is not None:
-            self.evaluate_log_joint = evaluate_log_joint
+        if setup is not None:
+            self.setup = setup
         self.args = args
 
         with tf.Graph().as_default() as self.graph:
-            self.log_joint, self.factors = self.evaluate_log_joint(*self.args)
+            self.log_likelihood, self.factors, self.priors = self.setup(*self.args)
             # Evaluate the entropies
             self.entropies = {key: value.entropy for key, value in self.factors.items()}
             # Compute the lower bound
-            self.elbo = self.log_joint + \
-                sum([tf.reduce_sum(entropy) for entropy in self.entropies.values()])
+            self.elbo = self.log_likelihood + \
+                sum([tf.reduce_sum(entropy) for entropy in self.entropies.values()]) + \
+                sum([tf.reduce_sum(prior(self.factors[key])) for key, prior in self.priors.items()])
             # Define a loss
             self.loss = - self.elbo
             self.global_step = tf.Variable(0, name='global_step', trainable=False)
@@ -60,16 +61,20 @@ class Model:
         """
         return tf.Session()
 
-    def evaluate_log_joint(self, *args):  # pylint: disable=E0202
+    def setup(self, *args):  # pylint: disable=E0202
         """
         Evaluate the expected value of the log joint distribution.
 
         Returns
         -------
-        log_joint : tf.Tensor
+        log_likelihood : tf.Tensor
             expected value of the log joint distribution.
         factors : dict[str, Distribution]
-            dictionary of factors of the approximate posterior keyed by name.
+            dictionary of factors of the approximate posterior keyed by factor name.
+        priors : dict[str, callable]
+            dictionary of callables to evaluate the prior keyed by factor name. By convention,
+            the callables should only depend on hyperparameters. Hierarchical priors should be
+            included in the `log_likelihood` term.
         """
         raise NotImplementedError
 

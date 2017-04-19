@@ -6,7 +6,7 @@ import numpy as np
 
 @pytest.fixture
 def model():
-    def evaluate_log_joint(x):
+    def setup(x):
         # Define the mean that we want to infer
         mu = ef.NormalDistribution(
             ef.get_variable("mu_mean", []),
@@ -15,10 +15,10 @@ def model():
         # Define a prior
         mu_prior = ef.NormalDistribution(0, 1e-3)
         # Return the log joint and the factor
-        return tf.reduce_sum(mu.log_proba(x)) + mu_prior.log_proba(mu), {'mu': mu}
+        return tf.reduce_sum(mu.log_proba(x)), {'mu': mu}, {'mu': mu_prior.log_proba}
 
     x = np.random.normal(0, 1, 100)
-    return ef.Model(evaluate_log_joint, [x])
+    return ef.Model(setup, [x])
 
 
 def test_optimize(model):
