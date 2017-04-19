@@ -34,7 +34,6 @@ class Model:
         self.args = args
 
         with tf.Graph().as_default() as self.graph:
-            self.optimizer = self.create_optimizer()
             self.log_joint, self.factors = self.evaluate_log_joint(*self.args)
             # Evaluate the entropies
             self.entropies = {key: value.entropy for key, value in self.factors.items()}
@@ -43,7 +42,9 @@ class Model:
                 sum([tf.reduce_sum(entropy) for entropy in self.entropies.values()])
             # Define a loss
             self.loss = - self.elbo
-            self.train_op = self.optimizer.minimize(self.loss)
+            self.global_step = tf.Variable(0, name='global_step', trainable=False)
+            self.optimizer = self.create_optimizer()
+            self.train_op = self.optimizer.minimize(self.loss, global_step=self.global_step)
             self.session = self.create_session()
             self.session.run(tf.global_variables_initializer())
 
