@@ -6,7 +6,7 @@ NOTEBOOK_OUTPUTS = $(NOTEBOOKS:.ipynb=.html)
 notebooks : $(NOTEBOOK_OUTPUTS)
 
 $(NOTEBOOK_OUTPUTS) : %.html : %.ipynb
-	jupyter nbconvert --execute $@ $<
+	jupyter nbconvert --execute --ExecutePreprocessor.timeout=None $@ $<
 
 tests :
 	py.test -v --cov elboflow --cov-report html -rsx
