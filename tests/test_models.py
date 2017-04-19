@@ -18,7 +18,7 @@ def model():
         return tf.reduce_sum(mu.log_proba(x)), {'mu': mu}, {'mu': mu_prior.log_proba}
 
     x = np.random.normal(0, 1, 100)
-    return ef.Model(setup, [x])
+    return ef.Model(x, setup=setup)
 
 
 def test_optimize(model):

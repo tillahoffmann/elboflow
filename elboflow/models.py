@@ -23,8 +23,7 @@ class Model:
     create_session : callable
         function to create a session.
     """
-    def __init__(self, setup=None, args=None, create_optimizer=None,
-                 create_session=None):
+    def __init__(self, *args, setup=None, create_optimizer=None, create_session=None):
         if create_optimizer is not None:
             self.create_optimizer = create_optimizer
         if create_session is not None:
