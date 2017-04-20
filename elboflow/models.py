@@ -43,22 +43,29 @@ class Model:
             # Define a loss
             self.loss = - self.elbo
             self.global_step = tf.Variable(0, name='global_step', trainable=False)
-            self.optimizer = self.create_optimizer()
+            self.learning_rate = self.create_learning_rate()
+            self.optimizer = self.create_optimizer(self.learning_rate)
             self.train_op = self.optimizer.minimize(self.loss, global_step=self.global_step)
             self.session = self.create_session()
             self.session.run(tf.global_variables_initializer())
 
-    def create_optimizer(self):  # pylint: disable=E0202
+    def create_optimizer(self, learning_rate):  # pylint: disable=E0202
         """
         Create a tensorflow optimizer.
         """
-        return tf.train.AdamOptimizer(0.1)
+        return tf.train.AdamOptimizer(learning_rate)
 
     def create_session(self):  # pylint: disable=E0202
         """
         Create a tensorflow session.
         """
         return tf.Session()
+
+    def create_learning_rate(self):
+        """
+        Create a learning rate variable.
+        """
+        return tf.Variable(0.1, False, name='learning_rate')
 
     def setup(self, *args):  # pylint: disable=E0202
         """
