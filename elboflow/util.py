@@ -5,11 +5,38 @@ import numpy as np
 import tensorflow as tf
 
 
-LOG2 = np.log(2).astype(np.float32)
-LOGPI = np.log(np.pi).astype(np.float32)
-LOG2PI = LOG2 + LOGPI
-LOG2PIE = LOG2PI + 1.0
-FLOATX = tf.float32
+class _Constants:
+    """
+    Container class for various constants respecting the global dtype.
+    """
+    FLOATX = tf.float32
+
+    @property
+    def LOG2(self):
+        return np.log(2).astype(self.FLOATX.as_numpy_dtype)
+
+    @property
+    def LOGPI(self):
+        return np.log(np.pi).astype(self.FLOATX.as_numpy_dtype)
+
+    @property
+    def LOG2PI(self):
+        return self.LOG2 + self.LOGPI
+
+    @property
+    def LOG2PIE(self):
+        return self.LOG2PI + 1.0
+
+    @property
+    def HALF(self):
+        return self.FLOATX.as_numpy_dtype(0.5)
+
+    @property
+    def TWO(self):
+        return self.FLOATX.as_numpy_dtype(2.0)
+
+
+constants = _Constants()
 
 
 class BaseDistribution:
@@ -21,7 +48,7 @@ class BaseDistribution:
 def as_tensor(x, dtype=None, name=None):
     if isinstance(x, BaseDistribution):
         return x
-    return tf.convert_to_tensor(x, dtype or FLOATX, name)
+    return tf.convert_to_tensor(x, dtype or constants.FLOATX, name)
 
 
 def assert_constant(x):
@@ -34,7 +61,13 @@ def tril(x, k=0, name=None):
     return tf.matrix_band_part(x, -1, k, name)
 
 
-get_variable = tf.get_variable
+@ft.wraps(tf.get_variable)
+def get_variable(name, shape=None, dtype=None, initializer=None, regularizer=None,
+                 trainable=True, collections=None, caching_device=None, partitioner=None,
+                 validate_shape=True, custom_getter=None):
+    return tf.get_variable(name, shape, dtype or constants.FLOATX, initializer, regularizer,
+                           trainable, collections, caching_device, partitioner, validate_shape,
+                           custom_getter)
 
 
 def get_positive_variable(name, shape=None, dtype=None, initializer=None, regularizer=None,
@@ -106,8 +139,8 @@ def multidigamma(x, p, name=None):
     https://en.wikipedia.org/wiki/Multivariate_gamma_function#Derivatives
     """
     x = as_tensor(x)
-    return tf.reduce_sum(tf.digamma(x[..., None] - 0.5 * tf.range(p, dtype=x.dtype)), axis=-1,
-                         name=name)
+    return tf.reduce_sum(tf.digamma(x[..., None] - constants.HALF * tf.range(p, dtype=x.dtype)),
+                         axis=-1, name=name)
 
 
 def lmultigamma(x, p, name=None):
@@ -121,7 +154,7 @@ def lmultigamma(x, p, name=None):
     x = as_tensor(x)
     _dims = tf.range(p, dtype=x.dtype)
     p = as_tensor(p)
-    return tf.add(0.25 * p * (p - 1.0) * LOGPI,
+    return tf.add(0.25 * p * (p - 1.0) * constants.LOGPI,
                   tf.reduce_sum(tf.lgamma(x[..., None] - 0.5 * _dims), axis=-1), name=name)
 
 
@@ -130,7 +163,15 @@ def symmetric_log_det(x, name=None):
     Compute the log determinant of a symmetric positive definite matrix.
     """
     chol = tf.cholesky(as_tensor(x))
-    return tf.multiply(2.0, tf.reduce_sum(tf.log(tf.matrix_diag_part(chol))), name)
+    return cholesky_log_det(chol, name)
+
+
+def cholesky_log_det(x, name=None):
+    """
+    Compute the log determinant of the matrix `tf.matmul(x, x, transpose_a=True)`.
+    """
+    x = as_tensor(x)
+    return tf.multiply(constants.TWO, tf.reduce_sum(tf.log(tf.matrix_diag_part(x))), name)
 
 
 def minmax(x, axis=None):

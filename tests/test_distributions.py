@@ -46,24 +46,26 @@ def evaluate_scipy_statistic(dist, statistic):
 
 
 @pytest.fixture(params=it.chain(
-    [(ef.NormalDistribution(mean, precision), scipy.stats.norm(mean, 1 / np.sqrt(precision)))
+    [(ef.NormalDistribution, (mean, precision), scipy.stats.norm(mean, 1 / np.sqrt(precision)))
      for mean, precision in [(0, 1), (3, 0.1), (-5, 2)]],
-    [(ef.GammaDistribution(shape, scale), scipy.stats.gamma(shape, scale=1 / scale))
+    [(ef.GammaDistribution, (shape, scale), scipy.stats.gamma(shape, scale=1 / scale))
      for shape, scale in [(.1, 3), (50, 2)]],
-    [(ef.DirichletDistribution(alpha), scipy.stats.dirichlet(alpha)) for alpha in
+    [(ef.DirichletDistribution, (alpha,), scipy.stats.dirichlet(alpha)) for alpha in
      [np.ones(5), np.random.gamma(5, size=7)]],
-    [(ef.WishartDistribution(shape, scale), scipy.stats.wishart(shape, np.linalg.inv(scale)))
+    [(ef.WishartDistribution, (shape, np.linalg.cholesky(scale)),
+      scipy.stats.wishart(shape, np.linalg.inv(scale)))
      for shape, scale in [(4, 10 * np.eye(2)), (3, [(2, -1), (-1, 3)])]],
-    [(ef.CategoricalDistribution(p), scipy.stats.multinomial(1, p)) for p in
+    [(ef.CategoricalDistribution, (p,), scipy.stats.multinomial(1, p)) for p in
      [np.ones(3) / 3, np.random.dirichlet(np.ones(7))]],
-    [(ef.MultiNormalDistribution(mean, precision),
+    [(ef.MultiNormalDistribution, (mean, np.linalg.cholesky(precision)),
       scipy.stats.multivariate_normal(mean, np.linalg.inv(precision))) for mean, precision
      in [(np.zeros(2), np.eye(2)), ([-3, 2], [[4, -1], [-1, 2]])]],
-    [(ef.BetaDistribution(a, b), scipy.stats.beta(a, b)) for a, b in
+    [(ef.BetaDistribution, (a, b), scipy.stats.beta(a, b)) for a, b in
      np.random.gamma(5, size=(3, 2))]
 ))
-def distribution_pair(request):
-    return request.param
+def distribution_pair(request, dtype):
+    _type, _args, scipy_dist = request.param
+    return _type(*_args), scipy_dist
 
 
 def test_statistic(session, distribution_pair):
@@ -116,7 +118,7 @@ def test_log_proba(session, distribution_pair):
     assert np.isfinite(value), "log probability is not finite for '%s'" % ef_dist.to_str(session)
 
 
-def test_normal_linear_log_likelihood(session):
+def test_normal_linear_log_likelihood(session, dtype):
     # Generate some data
     x = np.random.normal(0, 1, (100, 3))
     theta = np.random.normal(0, 1, 3)
