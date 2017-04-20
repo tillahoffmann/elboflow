@@ -125,6 +125,14 @@ def lmultigamma(x, p, name=None):
                   tf.reduce_sum(tf.lgamma(x[..., None] - 0.5 * _dims), axis=-1), name=name)
 
 
+def symmetric_log_det(x, name=None):
+    """
+    Compute the log determinant of a symmetric positive definite matrix.
+    """
+    chol = tf.cholesky(as_tensor(x))
+    return tf.multiply(2.0, tf.reduce_sum(tf.log(tf.matrix_diag_part(chol))), name)
+
+
 def minmax(x, axis=None):
     """
     Evaluate the minimum and maximum of an array.

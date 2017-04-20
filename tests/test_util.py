@@ -19,6 +19,14 @@ def test_lmultigamma(session, x, p):
     np.testing.assert_allclose(actual, desired)
 
 
+def test_symmetric_logdet(session):
+    x = np.random.normal(0, 1, (10, 10))
+    x = np.dot(x, x.T)
+    actual = session.run(ef.symmetric_log_det(x))
+    desired = np.log(np.linalg.det(x))
+    np.testing.assert_allclose(actual, desired, 1e-5)
+
+
 @pytest.mark.parametrize('shape', [tuple(), 5, (8, 7)])
 def test_get_positive_variable(session, shape):
     x = ef.get_positive_variable('x%s' % uuid.uuid4().hex, shape)

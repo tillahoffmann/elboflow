@@ -36,7 +36,7 @@ def evaluate_statistic(x, statistic, name=None, sample_rank=None):
     elif statistic == 'outer':
         return tf.multiply(x[..., None, :], x[..., :, None], name)
     elif statistic == 'log_det':
-        return tf.log(tf.matrix_determinant(x), name)
+        return symmetric_log_det(x, name)
     elif statistic == 'log':
         return tf.log(x, name)
     elif statistic == 'log1m':
@@ -553,7 +553,7 @@ class MultiNormalDistribution(Distribution):
         elif statistic == '_ndim':
             return tf.to_float(self.sample_shape[-1], name)
         elif statistic == '_log_det_precision':
-            return tf.log(tf.matrix_determinant(self._precision), name)
+            return symmetric_log_det(self._precision, name)
         else:
             return super(MultiNormalDistribution, self)._statistic(statistic, name)
 
@@ -616,13 +616,13 @@ class WishartDistribution(Distribution):
         elif statistic == 'log_det':
             p = self.statistic('_ndim')
             return tf.subtract(multidigamma(0.5 * self._shape, p) + p * LOG2,
-                               tf.log(tf.matrix_determinant(self._scale)), name)
+                               symmetric_log_det(self._scale), name)
         elif statistic == 'entropy':
             p = self.statistic('_ndim')
             return tf.subtract(0.5 * p * (p + 1.0) * LOG2 + lmultigamma(0.5 * self._shape, p) -
                                0.5 * (self._shape - p - 1.0) * multidigamma(0.5 * self._shape, p) +
                                0.5 * self._shape * p, 0.5 * (p + 1.0) *
-                               tf.log(tf.matrix_determinant(self._scale)), name)
+                               symmetric_log_det(self._scale), name)
         else:
             return super(WishartDistribution, self)._statistic(statistic, name)
 
