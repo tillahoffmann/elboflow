@@ -241,7 +241,7 @@ class NormalDistribution(Distribution):
 
     def _statistic(self, statistic, name):
         if statistic == 'entropy':
-            return tf.multiply(0.5, constants.LOG2PIE - tf.log(self._precision), name)
+            return tf.multiply(constants.HALF, constants.LOG2PIE - tf.log(self._precision), name)
         elif statistic == 1:
             return self._mean
         elif statistic == 'var':
@@ -259,7 +259,7 @@ class NormalDistribution(Distribution):
     def log_likelihood(x, mean, precision, name=None):  # pylint: disable=W0221
         chi2 = evaluate_statistic(x, 2) - 2 * evaluate_statistic(x, 1) * \
             evaluate_statistic(mean, 1) + evaluate_statistic(mean, 2)
-        return tf.multiply(0.5, evaluate_statistic(precision, 'log') - constants.LOG2PI -
+        return tf.multiply(constants.HALF, evaluate_statistic(precision, 'log') - constants.LOG2PI -
                            evaluate_statistic(precision, 1) * chi2, name)
 
     @staticmethod
@@ -274,13 +274,13 @@ class NormalDistribution(Distribution):
         """
         y, x, theta, tau = map(as_tensor, [y, x, theta, tau])
         # Evaluate the pointwise expected log-likelihood
-        chi2 = evaluate_statistic(y, 2) - 2.0 * tf.reduce_sum(
+        chi2 = evaluate_statistic(y, 2) - constants.TWO * tf.reduce_sum(
             evaluate_statistic(y[..., None], 1) * evaluate_statistic(x, 1) *
             evaluate_statistic(theta, 1), axis=-1
         ) + tf.reduce_sum(
             evaluate_statistic(x, 'outer') * evaluate_statistic(theta, 'outer'), axis=(-1, -2)
         )
-        ll = tf.multiply(0.5, evaluate_statistic(tau, 'log') - constants.LOG2PI -
+        ll = tf.multiply(constants.HALF, evaluate_statistic(tau, 'log') - constants.LOG2PI -
                          evaluate_statistic(tau, 1) * chi2, name)
         return ll
 
@@ -550,10 +550,10 @@ class MultiNormalDistribution(Distribution):
             return tf.add(self._mean[..., None, :] * self._mean[..., :, None],
                           self.statistic('cov'), name)
         elif statistic == 'entropy':
-            return tf.multiply(0.5, constants.LOG2PIE * self.statistic('_ndim') -
+            return tf.multiply(constants.HALF, constants.LOG2PIE * self.statistic('_ndim') -
                                self.statistic('_log_det_precision'), name)
         elif statistic == '_ndim':
-            return tf.to_float(self.sample_shape[-1], name)
+            return tf.cast(self.sample_shape[-1], constants.FLOATX, name)
         elif statistic == '_log_det_precision':
             return cholesky_log_det(self._cholesky_precision, name)
         elif statistic == '_precision':
@@ -573,9 +573,9 @@ class MultiNormalDistribution(Distribution):
             x_1[..., None, :] * mean_1[..., :, None] - \
             x_1[..., :, None] * mean_1[..., None, :]
 
-        ndim = tf.to_float(tf.shape(mean_1)[-1])
+        ndim = tf.cast(tf.shape(mean_1)[-1], constants.FLOATX)
 
-        return tf.multiply(0.5, - ndim * constants.LOG2PI +
+        return tf.multiply(constants.HALF, - ndim * constants.LOG2PI +
                            evaluate_statistic(precision, 'log_det') -
                            tf.reduce_sum(evaluate_statistic(precision, 1) * arg, axis=(-1, -2)),
                            name)
@@ -618,7 +618,7 @@ class WishartDistribution(Distribution):
         elif statistic == 2:
             return tf.add(tf.square(self.statistic(1)), self.statistic('var'), name)
         elif statistic == '_ndim':
-            return tf.to_float(self.sample_shape[-1], name)
+            return tf.cast(self.sample_shape[-1], constants.FLOATX, name)
         elif statistic == 'log_det':
             p = self.statistic('_ndim')
             return tf.subtract(multidigamma(0.5 * self._shape, p) + p * constants.LOG2,
@@ -648,7 +648,7 @@ class WishartDistribution(Distribution):
         x_1 = evaluate_statistic(x, 1)
         shape_1 = evaluate_statistic(shape, 1)
         scale_1 = evaluate_statistic(scale, 1)
-        p = tf.to_float(tf.shape(scale_1)[-1])
+        p = tf.cast(tf.shape(scale_1)[-1], constants.FLOATX)
 
         return tf.add(0.5 * x_logdet * (shape_1 - p - 1.0) - 0.5 *
                       tf.reduce_sum(scale_1 * x_1, axis=(-1, -2)) - 0.5 * shape_1 * p *

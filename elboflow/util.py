@@ -27,6 +27,14 @@ class _Constants:
     def LOG2PIE(self):
         return self.LOG2PI + 1.0
 
+    @property
+    def HALF(self):
+        return self.FLOATX.as_numpy_dtype(0.5)
+
+    @property
+    def TWO(self):
+        return self.FLOATX.as_numpy_dtype(2.0)
+
 
 constants = _Constants()
 
@@ -53,7 +61,13 @@ def tril(x, k=0, name=None):
     return tf.matrix_band_part(x, -1, k, name)
 
 
-get_variable = tf.get_variable
+@ft.wraps(tf.get_variable)
+def get_variable(name, shape=None, dtype=None, initializer=None, regularizer=None,
+                 trainable=True, collections=None, caching_device=None, partitioner=None,
+                 validate_shape=True, custom_getter=None):
+    return tf.get_variable(name, shape, dtype or constants.FLOATX, initializer, regularizer,
+                           trainable, collections, caching_device, partitioner, validate_shape,
+                           custom_getter)
 
 
 def get_positive_variable(name, shape=None, dtype=None, initializer=None, regularizer=None,
@@ -125,8 +139,8 @@ def multidigamma(x, p, name=None):
     https://en.wikipedia.org/wiki/Multivariate_gamma_function#Derivatives
     """
     x = as_tensor(x)
-    return tf.reduce_sum(tf.digamma(x[..., None] - 0.5 * tf.range(p, dtype=x.dtype)), axis=-1,
-                         name=name)
+    return tf.reduce_sum(tf.digamma(x[..., None] - constants.HALF * tf.range(p, dtype=x.dtype)),
+                         axis=-1, name=name)
 
 
 def lmultigamma(x, p, name=None):
@@ -157,7 +171,7 @@ def cholesky_log_det(x, name=None):
     Compute the log determinant of the matrix `tf.matmul(x, x, transpose_a=True)`.
     """
     x = as_tensor(x)
-    return tf.multiply(2.0, tf.reduce_sum(tf.log(tf.matrix_diag_part(x))), name)
+    return tf.multiply(constants.TWO, tf.reduce_sum(tf.log(tf.matrix_diag_part(x))), name)
 
 
 def minmax(x, axis=None):
