@@ -527,13 +527,15 @@ class MultiNormalDistribution(Distribution):
     ----------
     mean : tf.Tensor
         mean of the multivariate normal distribution
-    precision : tf.Tensor
-        precision of the multivariate normal distribution
+    cholesky_precision : tf.Tensor
+        Cholesky decompoisition of the precision of the multivariate normal distribution
     """
-    def __init__(self, mean, precision):
-        super(MultiNormalDistribution, self).__init__(['mean', 'precision'], ['cov', 'outer'])
+    def __init__(self, mean, cholesky_precision):
+        super(MultiNormalDistribution, self).__init__(['mean', 'precision'],
+                                                      ['cov', 'outer'])
         self._mean = as_tensor(mean)
-        self._precision = as_tensor(precision)
+        self._cholesky_precision = as_tensor(cholesky_precision)
+        self._precision = self.statistic('_precision')
 
     def _statistic(self, statistic, name):
         if statistic == 1:
@@ -541,7 +543,7 @@ class MultiNormalDistribution(Distribution):
         elif statistic == 2:
             return tf.add(tf.square(self._mean), self.statistic('var'), name)
         elif statistic == 'cov':
-            return tf.matrix_inverse(self._precision, name=name)
+            return tf.matrix_inverse(self.statistic('_precision'), name=name)
         elif statistic == 'var':
             return tf.matrix_diag_part(self.statistic('cov'), name)
         elif statistic == 'outer':
@@ -553,7 +555,9 @@ class MultiNormalDistribution(Distribution):
         elif statistic == '_ndim':
             return tf.to_float(self.sample_shape[-1], name)
         elif statistic == '_log_det_precision':
-            return symmetric_log_det(self._precision, name)
+            return cholesky_log_det(self._cholesky_precision, name)
+        elif statistic == '_precision':
+            return tf.matmul(self._cholesky_precision, self._cholesky_precision, transpose_b=True)
         else:
             return super(MultiNormalDistribution, self)._statistic(statistic, name)
 
@@ -584,8 +588,8 @@ class WishartDistribution(Distribution):
     ----------
     shape : array_like
         shape parameter or degrees of freedom which must be greater than `ndim - 1`
-    scale : array_like
-        scale matrix
+    cholesky_scale : array_like
+        Cholesky decomposition of the scale matrix
 
     Notes
     -----
@@ -594,16 +598,17 @@ class WishartDistribution(Distribution):
     particular, our scale parameter differs by a matrix inverse to be consistent with the
     parametrization of the gamma distribution above.
     """
-    def __init__(self, shape, scale):
+    def __init__(self, shape, cholesky_scale):
         super(WishartDistribution, self).__init__(['shape', 'scale'], ['log_det'])
         self._shape = as_tensor(shape)
-        self._scale = as_tensor(scale)
+        self._cholesky_scale = as_tensor(cholesky_scale)
+        self._scale = self.statistic('_scale')
 
     def _statistic(self, statistic, name):
         if statistic == 1:
             return tf.multiply(self._shape[..., None, None], self.statistic('_inv_scale'), name)
         elif statistic == '_inv_scale':
-            return tf.matrix_inverse(self._scale, name=name)
+            return tf.matrix_inverse(self.statistic('_scale'), name=name)
         elif statistic == 'var':
             inv_scale = self.statistic('_inv_scale')
             diag = tf.matrix_diag_part(inv_scale)
@@ -616,13 +621,17 @@ class WishartDistribution(Distribution):
         elif statistic == 'log_det':
             p = self.statistic('_ndim')
             return tf.subtract(multidigamma(0.5 * self._shape, p) + p * LOG2,
-                               symmetric_log_det(self._scale), name)
+                               self.statistic('_log_det_scale'), name)
         elif statistic == 'entropy':
             p = self.statistic('_ndim')
             return tf.subtract(0.5 * p * (p + 1.0) * LOG2 + lmultigamma(0.5 * self._shape, p) -
                                0.5 * (self._shape - p - 1.0) * multidigamma(0.5 * self._shape, p) +
                                0.5 * self._shape * p, 0.5 * (p + 1.0) *
-                               symmetric_log_det(self._scale), name)
+                               self.statistic('_log_det_scale'), name)
+        elif statistic == '_scale':
+            return tf.matmul(self._cholesky_scale, self._cholesky_scale, transpose_b=True, name=name)
+        elif statistic == '_log_det_scale':
+            return cholesky_log_det(self._cholesky_scale, name)
         else:
             return super(WishartDistribution, self)._statistic(statistic, name)
 
@@ -633,6 +642,7 @@ class WishartDistribution(Distribution):
     @staticmethod
     def log_likelihood(x, shape, scale, name=None):  # pylint: disable=W0221
         assert_constant(shape)
+        assert_constant(scale)
         x_logdet = evaluate_statistic(x, 'log_det')
         x_1 = evaluate_statistic(x, 1)
         shape_1 = evaluate_statistic(shape, 1)

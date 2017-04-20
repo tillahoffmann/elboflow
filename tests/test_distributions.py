@@ -52,11 +52,12 @@ def evaluate_scipy_statistic(dist, statistic):
      for shape, scale in [(.1, 3), (50, 2)]],
     [(ef.DirichletDistribution(alpha), scipy.stats.dirichlet(alpha)) for alpha in
      [np.ones(5), np.random.gamma(5, size=7)]],
-    [(ef.WishartDistribution(shape, scale), scipy.stats.wishart(shape, np.linalg.inv(scale)))
+    [(ef.WishartDistribution(shape, np.linalg.cholesky(scale)),
+      scipy.stats.wishart(shape, np.linalg.inv(scale)))
      for shape, scale in [(4, 10 * np.eye(2)), (3, [(2, -1), (-1, 3)])]],
     [(ef.CategoricalDistribution(p), scipy.stats.multinomial(1, p)) for p in
      [np.ones(3) / 3, np.random.dirichlet(np.ones(7))]],
-    [(ef.MultiNormalDistribution(mean, precision),
+    [(ef.MultiNormalDistribution(mean, np.linalg.cholesky(precision)),
       scipy.stats.multivariate_normal(mean, np.linalg.inv(precision))) for mean, precision
      in [(np.zeros(2), np.eye(2)), ([-3, 2], [[4, -1], [-1, 2]])]],
     [(ef.BetaDistribution(a, b), scipy.stats.beta(a, b)) for a, b in

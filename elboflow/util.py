@@ -130,7 +130,15 @@ def symmetric_log_det(x, name=None):
     Compute the log determinant of a symmetric positive definite matrix.
     """
     chol = tf.cholesky(as_tensor(x))
-    return tf.multiply(2.0, tf.reduce_sum(tf.log(tf.matrix_diag_part(chol))), name)
+    return cholesky_log_det(chol, name)
+
+
+def cholesky_log_det(x, name=None):
+    """
+    Compute the log determinant of the matrix `tf.matmul(x, x, transpose_a=True)`.
+    """
+    x = as_tensor(x)
+    return tf.multiply(2.0, tf.reduce_sum(tf.log(tf.matrix_diag_part(x))), name)
 
 
 def minmax(x, axis=None):
