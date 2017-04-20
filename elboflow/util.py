@@ -5,11 +5,30 @@ import numpy as np
 import tensorflow as tf
 
 
-LOG2 = np.log(2).astype(np.float32)
-LOGPI = np.log(np.pi).astype(np.float32)
-LOG2PI = LOG2 + LOGPI
-LOG2PIE = LOG2PI + 1.0
-FLOATX = tf.float32
+class _Constants:
+    """
+    Container class for various constants respecting the global dtype.
+    """
+    FLOATX = tf.float32
+
+    @property
+    def LOG2(self):
+        return np.log(2).astype(self.FLOATX.as_numpy_dtype)
+
+    @property
+    def LOGPI(self):
+        return np.log(np.pi).astype(self.FLOATX.as_numpy_dtype)
+
+    @property
+    def LOG2PI(self):
+        return self.LOG2 + self.LOGPI
+
+    @property
+    def LOG2PIE(self):
+        return self.LOG2PI + 1.0
+
+
+constants = _Constants()
 
 
 class BaseDistribution:
@@ -21,7 +40,7 @@ class BaseDistribution:
 def as_tensor(x, dtype=None, name=None):
     if isinstance(x, BaseDistribution):
         return x
-    return tf.convert_to_tensor(x, dtype or FLOATX, name)
+    return tf.convert_to_tensor(x, dtype or constants.FLOATX, name)
 
 
 def assert_constant(x):
@@ -121,7 +140,7 @@ def lmultigamma(x, p, name=None):
     x = as_tensor(x)
     _dims = tf.range(p, dtype=x.dtype)
     p = as_tensor(p)
-    return tf.add(0.25 * p * (p - 1.0) * LOGPI,
+    return tf.add(0.25 * p * (p - 1.0) * constants.LOGPI,
                   tf.reduce_sum(tf.lgamma(x[..., None] - 0.5 * _dims), axis=-1), name=name)
 
 

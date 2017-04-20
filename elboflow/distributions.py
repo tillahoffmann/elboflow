@@ -241,7 +241,7 @@ class NormalDistribution(Distribution):
 
     def _statistic(self, statistic, name):
         if statistic == 'entropy':
-            return tf.multiply(0.5, LOG2PIE - tf.log(self._precision), name)
+            return tf.multiply(0.5, constants.LOG2PIE - tf.log(self._precision), name)
         elif statistic == 1:
             return self._mean
         elif statistic == 'var':
@@ -259,7 +259,7 @@ class NormalDistribution(Distribution):
     def log_likelihood(x, mean, precision, name=None):  # pylint: disable=W0221
         chi2 = evaluate_statistic(x, 2) - 2 * evaluate_statistic(x, 1) * \
             evaluate_statistic(mean, 1) + evaluate_statistic(mean, 2)
-        return tf.multiply(0.5, evaluate_statistic(precision, 'log') - LOG2PI -
+        return tf.multiply(0.5, evaluate_statistic(precision, 'log') - constants.LOG2PI -
                            evaluate_statistic(precision, 1) * chi2, name)
 
     @staticmethod
@@ -280,7 +280,7 @@ class NormalDistribution(Distribution):
         ) + tf.reduce_sum(
             evaluate_statistic(x, 'outer') * evaluate_statistic(theta, 'outer'), axis=(-1, -2)
         )
-        ll = tf.multiply(0.5, evaluate_statistic(tau, 'log') - LOG2PI -
+        ll = tf.multiply(0.5, evaluate_statistic(tau, 'log') - constants.LOG2PI -
                          evaluate_statistic(tau, 1) * chi2, name)
         return ll
 
@@ -550,7 +550,7 @@ class MultiNormalDistribution(Distribution):
             return tf.add(self._mean[..., None, :] * self._mean[..., :, None],
                           self.statistic('cov'), name)
         elif statistic == 'entropy':
-            return tf.multiply(0.5, LOG2PIE * self.statistic('_ndim') -
+            return tf.multiply(0.5, constants.LOG2PIE * self.statistic('_ndim') -
                                self.statistic('_log_det_precision'), name)
         elif statistic == '_ndim':
             return tf.to_float(self.sample_shape[-1], name)
@@ -575,7 +575,8 @@ class MultiNormalDistribution(Distribution):
 
         ndim = tf.to_float(tf.shape(mean_1)[-1])
 
-        return tf.multiply(0.5, - ndim * LOG2PI + evaluate_statistic(precision, 'log_det') -
+        return tf.multiply(0.5, - ndim * constants.LOG2PI +
+                           evaluate_statistic(precision, 'log_det') -
                            tf.reduce_sum(evaluate_statistic(precision, 1) * arg, axis=(-1, -2)),
                            name)
 
@@ -620,14 +621,14 @@ class WishartDistribution(Distribution):
             return tf.to_float(self.sample_shape[-1], name)
         elif statistic == 'log_det':
             p = self.statistic('_ndim')
-            return tf.subtract(multidigamma(0.5 * self._shape, p) + p * LOG2,
+            return tf.subtract(multidigamma(0.5 * self._shape, p) + p * constants.LOG2,
                                self.statistic('_log_det_scale'), name)
         elif statistic == 'entropy':
             p = self.statistic('_ndim')
-            return tf.subtract(0.5 * p * (p + 1.0) * LOG2 + lmultigamma(0.5 * self._shape, p) -
-                               0.5 * (self._shape - p - 1.0) * multidigamma(0.5 * self._shape, p) +
-                               0.5 * self._shape * p, 0.5 * (p + 1.0) *
-                               self.statistic('_log_det_scale'), name)
+            return tf.subtract(0.5 * p * (p + 1.0) * constants.LOG2 +
+                               lmultigamma(0.5 * self._shape, p) - 0.5 * (self._shape - p - 1.0) *
+                               multidigamma(0.5 * self._shape, p) + 0.5 * self._shape * p, 0.5 *
+                               (p + 1.0) * self.statistic('_log_det_scale'), name)
         elif statistic == '_scale':
             return tf.matmul(self._cholesky_scale, self._cholesky_scale, transpose_b=True, name=name)
         elif statistic == '_log_det_scale':
@@ -650,6 +651,6 @@ class WishartDistribution(Distribution):
         p = tf.to_float(tf.shape(scale_1)[-1])
 
         return tf.add(0.5 * x_logdet * (shape_1 - p - 1.0) - 0.5 *
-                      tf.reduce_sum(scale_1 * x_1, axis=(-1, -2)) - 0.5 * shape_1 * p * LOG2 -
-                      lmultigamma(0.5 * shape, p), 0.5 * shape_1 *
+                      tf.reduce_sum(scale_1 * x_1, axis=(-1, -2)) - 0.5 * shape_1 * p *
+                      constants.LOG2 - lmultigamma(0.5 * shape, p), 0.5 * shape_1 *
                       evaluate_statistic(scale, 'log_det'), name)
