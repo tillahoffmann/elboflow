@@ -68,7 +68,53 @@ def distribution_pair(request, dtype):
     return _type(*_args), scipy_dist
 
 
-def test_statistic(session, distribution_pair):
+SHAPES = [(10, ), (5, 7), (2, 3, 11)]
+
+
+@pytest.fixture(params=it.chain(
+    [(ef.NormalDistribution, (np.random.normal(0, 1, shape), np.random.gamma(1, 1, shape)))
+     for shape in SHAPES],
+    [(ef.GammaDistribution, (np.random.gamma(1, 1, shape), np.random.gamma(1, 1, shape)))
+     for shape in SHAPES],
+    [(ef.BetaDistribution, (np.random.gamma(1, 1, shape), np.random.gamma(1, 1, shape)))
+     for shape in SHAPES],
+    [(ef.DirichletDistribution, [np.random.dirichlet(shape + (5,))]) for shape in SHAPES],
+    [(ef.WishartDistribution, (3 + np.random.gamma(1, 1, shape),
+                               scipy.stats.wishart.rvs(4, np.eye(3), shape)))
+     for shape in SHAPES],
+    [(ef.MultiNormalDistribution, (np.random.normal(0, 1, shape + (3,)),
+                                   scipy.stats.wishart.rvs(4, np.eye(3), shape)))
+     for shape in SHAPES]
+
+))
+def distribution(request, dtype):
+    _type, _args = request.param
+    return _type(*_args)
+
+
+def test_evaluate_statistic(session, distribution):
+    for statistic in distribution.supported_statistics:
+        value = session.run(ef.evaluate_statistic(distribution, statistic))
+        assert np.all(np.isfinite(value)), "statistic '%s' for `%s` is not finite" % \
+            (statistic, distribution.to_str(session))
+
+
+def test_shape(session, distribution):
+    sample_shape, batch_shape, shape = session.run([
+        distribution.sample_shape, distribution.batch_shape, distribution.shape
+    ])
+    np.testing.assert_equal(np.concatenate([batch_shape, sample_shape]), shape)
+    np.testing.assert_equal(shape, session.run(distribution.mean).shape)
+
+
+def test_reshape(session, distribution):
+    num_elements = np.prod(session.run(distribution.batch_shape))
+    reshaped = distribution.reshape([num_elements])
+    mean, reshaped_mean = session.run([distribution.mean, reshaped.mean])
+    np.testing.assert_equal(mean.ravel(), reshaped_mean.ravel())
+
+
+def test_compare_statistic(session, distribution_pair):
     # Get the statistic from the tensorflow object
     ef_dist, scipy_dist = distribution_pair
 

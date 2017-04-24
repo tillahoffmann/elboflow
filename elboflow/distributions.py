@@ -78,6 +78,18 @@ class Distribution(BaseDistribution):
             return tf.diag(self.statistic('var'), name)
         elif statistic == 'std':
             return tf.sqrt(self.statistic('var'), name)
+        elif statistic == 'shape':
+            return tf.shape(self.statistic(1))
+        elif statistic == 'batch_shape':
+            if self.sample_rank > 0:
+                return self.statistic('shape')[:-self.sample_rank]
+            else:
+                return self.statistic('shape')
+        elif statistic == 'sample_shape':
+            if self.sample_rank > 0:
+                return self.statistic('shape')[-self.sample_rank:]
+            else:
+                return as_tensor([], tf.int32)
         else:
             raise KeyError("'%s' is not a recognized statistic for `%s`" %
                            (statistic, self.__class__.__name__))
@@ -153,6 +165,21 @@ class Distribution(BaseDistribution):
     def entropy(self):
         return self.statistic('entropy')
 
+    @property
+    def shape(self):
+        """tf.Tensor : shape of batches and samples"""
+        return self.statistic('shape')
+
+    @property
+    def batch_shape(self):
+        """tf.Tensor : shape of batches of samples"""
+        return self.statistic('batch_shape')
+
+    @property
+    def sample_shape(self):
+        """tf.Tensor : shape of samples"""
+        return self.statistic('sample_shape')
+
     @staticmethod
     def log_likelihood(x, *parameters, name=None):
         """
@@ -171,24 +198,6 @@ class Distribution(BaseDistribution):
     def sample_rank(self):
         """int : rank of samples (0 for scalars, 1 for vectors, 2 for matrices, etc.)"""
         raise NotImplementedError
-
-    @property
-    def batch_shape(self):
-        """tf.Tensor : shape of batches of samples"""
-        return self.shape[:-self.sample_rank]
-
-    @property
-    def sample_shape(self):
-        """tf.Tensor : shape of samples"""
-        if self.sample_rank > 0:
-            return self.shape[-self.sample_rank:]
-        else:
-            return as_tensor([], tf.int32)
-
-    @property
-    def shape(self):
-        """tf.Tensor : shape of batches and samples"""
-        return tf.shape(self.mean)
 
     def feed_dict(self, x):
         """
@@ -226,6 +235,17 @@ class Distribution(BaseDistribution):
                 raise KeyError("'%s' is not a recognized statistic" % statistic)
 
         return feed_dict
+
+    def _reshape_parameter(self, name, newshape):
+        parameter = getattr(self, '_%s' % name)
+        return tf.reshape(parameter, newshape)
+
+    def reshape(self, newshape):
+        """
+        Reshape the `batch_shape` of this distribution.
+        """
+        parameters = {key: self._reshape_parameter(key, newshape) for key in self._parameters}
+        return self.__class__(**parameters)
 
 
 class NormalDistribution(Distribution):
@@ -469,6 +489,12 @@ class DirichletDistribution(Distribution):
                       tf.reduce_sum(tf.lgamma(alpha), -1), tf.lgamma(tf.reduce_sum(alpha, -1)),
                       name)
 
+    def _reshape_parameter(self, name, newshape):
+        if name == 'alpha':
+            return tf.reshape(self._alpha, tf.concat([newshape, self.sample_shape], 0))
+        else:
+            raise KeyError(name)
+
 
 class BetaDistribution(Distribution):
     """
@@ -536,11 +562,10 @@ class MultiNormalDistribution(Distribution):
         Cholesky decompoisition of the precision of the multivariate normal distribution
     """
     def __init__(self, mean, cholesky_precision):
-        super(MultiNormalDistribution, self).__init__(['mean', 'precision'],
+        super(MultiNormalDistribution, self).__init__(['mean', 'cholesky_precision'],
                                                       ['cov', 'outer'])
         self._mean = as_tensor(mean)
         self._cholesky_precision = as_tensor(cholesky_precision)
-        self._precision = self.statistic('_precision')
 
     def _statistic(self, statistic, name):
         if statistic == 1:
@@ -585,6 +610,18 @@ class MultiNormalDistribution(Distribution):
                            tf.reduce_sum(evaluate_statistic(precision, 1) * arg, axis=(-1, -2)),
                            name)
 
+    def _reshape_parameter(self, name, newshape):
+        if name == 'mean':
+            return tf.reshape(self._mean, tf.concat([newshape, self.sample_shape], 0))
+        elif name == 'cholesky_precision':
+            newshape = tf.concat([newshape, self.sample_shape, self.sample_shape], 0)
+            return tf.reshape(self._cholesky_precision, newshape)
+        else:
+            raise KeyError(name)
+
+    def log_proba(self, x, name=None):
+        return self.log_likelihood(x, self._mean, self.statistic('_precision'), name)
+
 
 class WishartDistribution(Distribution):
     """
@@ -605,10 +642,9 @@ class WishartDistribution(Distribution):
     parametrization of the gamma distribution above.
     """
     def __init__(self, shape, cholesky_scale):
-        super(WishartDistribution, self).__init__(['shape', 'scale'], ['log_det'])
+        super(WishartDistribution, self).__init__(['shape', 'cholesky_scale'], ['log_det'])
         self._shape = as_tensor(shape)
         self._cholesky_scale = as_tensor(cholesky_scale)
-        self._scale = self.statistic('_scale')
 
     def _statistic(self, statistic, name):
         if statistic == 1:
@@ -659,3 +695,12 @@ class WishartDistribution(Distribution):
                       tf.reduce_sum(scale_1 * x_1, axis=(-1, -2)) - 0.5 * shape_1 * p *
                       constants.LOG2 - lmultigamma(0.5 * shape, p), 0.5 * shape_1 *
                       evaluate_statistic(scale, 'log_det'), name)
+
+    def _reshape_parameter(self, name, newshape):
+        if name == 'cholesky_scale':
+            return tf.reshape(self._cholesky_scale, tf.concat((newshape, self.sample_shape), 0))
+        else:
+            return super(WishartDistribution, self)._reshape_parameter(name, newshape)
+
+    def log_proba(self, x, name=None):
+        return self.log_likelihood(x, self._shape, self.statistic('_scale'), name)
