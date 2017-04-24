@@ -22,8 +22,10 @@ class Model:
         function to create an optimizer.
     create_session : callable
         function to create a session.
+    debug : bool
+        whether to return the dictionary of locals from the `setup` function.
     """
-    def __init__(self, *args, setup=None, create_optimizer=None, create_session=None):
+    def __init__(self, *args, setup=None, create_optimizer=None, create_session=None, debug=False):
         if create_optimizer is not None:
             self.create_optimizer = create_optimizer
         if create_session is not None:
@@ -33,7 +35,8 @@ class Model:
         self.args = args
 
         with tf.Graph().as_default() as self.graph:
-            self.log_likelihood, self.factors, self.priors = self.setup(*self.args)
+            self.log_likelihood, self.factors, self.priors, self.debug_locals = \
+                    self.setup(*self.args, debug=debug)
             # Evaluate the entropies
             self.entropies = {key: value.entropy for key, value in self.factors.items()}
             # Compute the lower bound
@@ -67,7 +70,7 @@ class Model:
         """
         return tf.Variable(0.1, False, name='learning_rate')
 
-    def setup(self, *args):  # pylint: disable=E0202
+    def setup(self, *args, debug=False):  # pylint: disable=E0202
         """
         Evaluate the expected value of the log joint distribution.
 
@@ -81,6 +84,8 @@ class Model:
             dictionary of callables to evaluate the prior keyed by factor name. By convention,
             the callables should only depend on hyperparameters. Hierarchical priors should be
             included in the `log_likelihood` term.
+        debug : bool
+            whether to return the dictionary of locals.
         """
         raise NotImplementedError
 
