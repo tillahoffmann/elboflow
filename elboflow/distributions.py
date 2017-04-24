@@ -1,6 +1,7 @@
 import numbers
 import scipy.special
 import tensorflow as tf
+import functools as ft
 
 from .util import *
 
@@ -112,6 +113,10 @@ class Distribution(BaseDistribution):
             name of the resulting operation
         """
         return self.log_likelihood(x, **self.parameters, name=name)
+
+    @ft.wraps(log_proba)
+    def __call__(self, x, name=None):
+        return self.log_proba(x, name)
 
     @property
     def parameters(self):
@@ -408,7 +413,7 @@ class CategoricalDistribution(Distribution):
         # Add covariance terms to the diagonal (wrt observations) to account for repeated indices
         # (distinct indices are independent by assumption)
         z_cov = evaluate_statistic(z, 'cov')
-        zz += tf.eye(shape[0].value)[..., None, None] * z_cov
+        zz += tf.eye(shape[0].value, dtype=constants.FLOATX)[..., None, None] * z_cov
 
         return tf.reduce_sum(zz * expected_log_likelihood, axis=(-1, -2), name=name)
 
@@ -613,8 +618,8 @@ class WishartDistribution(Distribution):
         elif statistic == 'var':
             inv_scale = self.statistic('_inv_scale')
             diag = tf.matrix_diag_part(inv_scale)
-            return tf.multiply(self._shape, tf.square(inv_scale) + diag[..., None, :] *
-                               diag[..., :, None], name)
+            return tf.multiply(self._shape[..., None, None], tf.square(inv_scale) +
+                               diag[..., None, :] * diag[..., :, None], name)
         elif statistic == 2:
             return tf.add(tf.square(self.statistic(1)), self.statistic('var'), name)
         elif statistic == '_ndim':
