@@ -84,7 +84,7 @@ class Model:
         """
         raise NotImplementedError
 
-    def optimize(self, steps, fetches=None, break_on_interrupt=True, tqdm=None):
+    def optimize(self, steps, fetches=None, feed_dict=None, break_on_interrupt=True, tqdm=None):
         """
         Optimize the evidence lower bound and trace statistics.
 
@@ -118,7 +118,7 @@ class Model:
         try:
             # Run the optimization
             for _ in steps:
-                _, *values = self.session.run(_fetches)
+                _, *values = self.session.run(_fetches, feed_dict)
                 # Add the values to the dictionary
                 for fetch, value in zip(fetches, values):
                     trace[fetch].append(value)
