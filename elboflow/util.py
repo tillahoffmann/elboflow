@@ -171,7 +171,17 @@ def cholesky_log_det(x, name=None):
     Compute the log determinant of the matrix `tf.matmul(x, x, transpose_a=True)`.
     """
     x = as_tensor(x)
-    return tf.multiply(constants.TWO, tf.reduce_sum(tf.log(tf.matrix_diag_part(x))), name)
+    return tf.multiply(constants.TWO, tf.reduce_sum(tf.log(tf.matrix_diag_part(x)), axis=-1), name)
+
+
+def kronecker_delta(output_shape, dtype=None, name=None):
+    """
+    Return the multivariate Kronecker delta.
+    """
+    dtype = dtype or constants.FLOATX
+    n = tf.reduce_min(output_shape)
+    i = tf.range(n)[:, None] * tf.ones_like(output_shape)
+    return tf.sparse_to_dense(i, output_shape, dtype.as_numpy_dtype(1.0), name=name)
 
 
 def minmax(x, axis=None):
